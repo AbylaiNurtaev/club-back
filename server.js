@@ -47,13 +47,16 @@ const io = new Server(server, {
 
 app.set('io', io);
 
-// Важно: передавать /socket.io/ в Socket.IO, иначе Express отдаёт 404
-app.use((req, res, next) => {
-  if (req.url && req.url.startsWith('/socket.io')) {
+// Маршрутизация на уровне сервера: /socket.io → Socket.IO, остальное → Express
+// (иначе Express обрабатывает запрос первым и отдаёт 404 для /socket.io)
+server.removeAllListeners('request');
+server.on('request', (req, res) => {
+  const path = (req.url || '').split('?')[0];
+  if (path.startsWith('/socket.io')) {
     io.engine.handleRequest(req, res);
-    return;
+  } else {
+    app(req, res);
   }
-  next();
 });
 
 // Подключение к комнате клуба по clubId (Mongo _id, clubId или qrToken)
@@ -95,6 +98,11 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 // Тестовый роут
 app.get('/', (req, res) => {
   res.json({ message: 'API работает' });
+});
+
+// Проверка, что запросы доходят до приложения (если /socket.io 404 — смотреть настройки прокси Railway)
+app.get('/ws-health', (req, res) => {
+  res.status(200).json({ ok: true, message: 'WebSocket app reachable' });
 });
 
 // Обработка ошибок
