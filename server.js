@@ -43,28 +43,44 @@ const io = new Server(server, {
 
 app.set('io', io);
 
-// CORS-заголовки вручную (на случай если cors() не сработает за прокси)
 function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+  } catch (_) {}
 }
 
-// Маршрутизация на уровне сервера: /socket.io → Socket.IO, остальное → Express
+// Один обработчик request: CORS на каждый ответ, OPTIONS → 204, /socket.io → Socket.IO, остальное → Express
 server.removeAllListeners('request');
 server.on('request', (req, res) => {
   setCorsHeaders(res);
-  const path = ((req.url || '').split('?')[0] || '').replace(/^\/+|\/+$/g, '') || '/';
-  const isSocketIo = path === 'socket.io' || path.startsWith('socket.io/');
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
+    res.writeHead(204).end();
     return;
   }
+  const path = (req.url || '').split('?')[0].replace(/^\/+/, '') || '';
+  const isSocketIo = path === 'socket.io' || path.startsWith('socket.io/');
   if (isSocketIo) {
-    io.engine.handleRequest(req, res);
-  } else {
+    try {
+      io.engine.handleRequest(req, res);
+    } catch (err) {
+      console.error('socket.io error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Socket.IO error' }));
+      }
+    }
+    return;
+  }
+  try {
     app(req, res);
+  } catch (err) {
+    console.error('app request error:', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Server error' }));
+    }
   }
 });
 
@@ -138,6 +154,6 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () => {
+server.listen(Number(PORT) || 3000, '0.0.0.0', () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
