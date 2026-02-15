@@ -24,13 +24,25 @@ if (!process.env.MONGO_URI) {
 connectDB();
 
 const app = express();
+
+// За прокси Railway/nginx: иначе сокеты и протокол могут определяться неверно
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 
+// CORS для сокетов: несколько origin или любой (прокси часто меняет Origin)
+const corsOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
+  : ['*'];
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*',
+    origin: corsOrigins.length ? corsOrigins : '*',
     methods: ['GET', 'POST'],
   },
+  allowEIO3: true,
+  transports: ['polling', 'websocket'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 app.set('io', io);
