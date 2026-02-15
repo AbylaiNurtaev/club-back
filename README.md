@@ -13,11 +13,13 @@ Backend система для управления компьютерными к
 ## Установка
 
 1. Установите зависимости:
+
 ```bash
 npm install
 ```
 
 2. Создайте файл `.env` на основе `.env.example`:
+
 ```bash
 PORT=3000
 MONGO_URI=your-mongodb-connection-string
@@ -31,6 +33,7 @@ AWS_S3_REGION=your-region
 ```
 
 3. Запустите сервер:
+
 ```bash
 npm run dev
 ```
@@ -68,6 +71,7 @@ pc-back/
 ## Роли пользователей
 
 ### Игрок (Player)
+
 - Регистрация и авторизация по телефону (код: 0000)
 - Получение 10 баллов при регистрации
 - Прокрутка рулетки за 20 баллов
@@ -76,6 +80,7 @@ pc-back/
 - Сканирование QR-кода клуба
 
 ### Клуб (Club)
+
 - Личный кабинет
 - Просмотр игроков клуба
 - Статистика игроков
@@ -84,6 +89,7 @@ pc-back/
 - Просмотр отчетов
 
 ### Администратор (Admin)
+
 - Управление клубами (создание, редактирование, удаление)
 - Управление пользователями
 - Создание и управление призами (до 25 слотов)
@@ -97,6 +103,7 @@ pc-back/
 ### Аутентификация (единый вход для всех ролей)
 
 **POST /api/auth/login** - Вход для всех ролей (игрок, клуб, админ)
+
 ```json
 // Request
 { "phone": "+79991234567", "code": "0000" }
@@ -130,6 +137,7 @@ pc-back/
 ```
 
 **POST /api/auth/register** - Регистрация игрока (опционально)
+
 ```json
 // Request
 { "phone": "+79991234567", "code": "0000" }
@@ -147,6 +155,7 @@ pc-back/
 ### Игроки
 
 **POST /api/players/register** - Регистрация игрока (устаревший, используйте /api/auth/login)
+
 ```json
 // Request
 { "phone": "+79991234567", "code": "0000" }
@@ -164,6 +173,7 @@ pc-back/
 **POST /api/players/login** - Авторизация игрока (устаревший, используйте /api/auth/login)
 
 **GET /api/players/me** - Информация о текущем игроке
+
 ```json
 // Headers: Authorization: Bearer {token}
 // Response
@@ -177,12 +187,14 @@ pc-back/
 ```
 
 **GET /api/players/balance** - Баланс игрока
+
 ```json
 // Response
 { "balance": 10 }
 ```
 
 **GET /api/players/transactions** - История транзакций
+
 ```json
 // Response
 [
@@ -197,11 +209,13 @@ pc-back/
 ```
 
 **Сценарий: QR → рулетка → списание 20 баллов**
+
 1. Пользователь сканирует QR клуба → на фронте открывается страница с `club_id` (в URL: `?club=...` или path).
 2. Фронт вызывает **GET /api/players/club** с `?club=<club_id>` (или **GET /api/players/club-by-qr/:qrToken**) — получает данные клуба и показывает рулетку.
 3. Игрок крутит рулетку → фронт вызывает **POST /api/players/spin** с заголовком `Authorization: Bearer <token>` и телом `{ "clubId": "<club_id или qrToken>" }`. Бэкенд списывает **20 баллов** с баланса и возвращает выпавший приз и новый баланс.
 
 **GET /api/players/club-by-qr/:qrToken** или **GET /api/players/club?club=...** — получить клуб по club_id / qrToken / clubId (для страницы после скана QR)
+
 ```json
 // Response
 {
@@ -213,6 +227,7 @@ pc-back/
 ```
 
 **GET /api/players/roulette-prizes** - Получить все призы для рулетки
+
 ```json
 // Response
 [
@@ -230,6 +245,7 @@ pc-back/
 ```
 
 **POST /api/players/spin** - Прокрутить рулетку
+
 ```json
 // Request
 { "clubId": "club_id" }
@@ -265,6 +281,7 @@ pc-back/
 Пример (клиент): подключаемся с `clubId`, слушаем `spin` и обновляем рулетку/историю.
 
 **GET /api/players/prizes** - Выигранные призы
+
 ```json
 // Response
 [
@@ -279,6 +296,7 @@ pc-back/
 ```
 
 **POST /api/players/attach-club** - Привязать к клубу
+
 ```json
 // Request
 { "clubId": "club_id" }
@@ -292,6 +310,7 @@ pc-back/
 **POST /api/clubs/login** - Авторизация клуба (устаревший, используйте /api/auth/login)
 
 **GET /api/clubs/me** - Информация о клубе
+
 ```json
 // Response
 {
@@ -305,6 +324,7 @@ pc-back/
 ```
 
 **GET /api/clubs/players** - Игроки клуба
+
 ```json
 // Response
 [
@@ -318,6 +338,7 @@ pc-back/
 ```
 
 **GET /api/clubs/players/stats** - Статистика игроков
+
 ```json
 // Response
 {
@@ -328,6 +349,7 @@ pc-back/
 ```
 
 **GET /api/clubs/prize-claims** - Заявки на призы
+
 ```json
 // Response
 [
@@ -342,6 +364,7 @@ pc-back/
 ```
 
 **PUT /api/clubs/prize-claims/:claimId/confirm** - Подтвердить приз
+
 ```json
 // Request
 { "notes": "Выдан" }
@@ -354,6 +377,7 @@ pc-back/
 ```
 
 **PUT /api/clubs/prize-claims/:claimId/club-time** - Управление временем в клубе
+
 ```json
 // Request
 { "action": "activate" }
@@ -366,6 +390,7 @@ pc-back/
 ```
 
 **GET /api/clubs/reports** - Отчеты по активности
+
 ```json
 // Query: ?startDate=2024-01-01&endDate=2024-01-31
 // Response
@@ -382,6 +407,7 @@ pc-back/
 **POST /api/admin/login** - Авторизация администратора (устаревший, используйте /api/auth/login)
 
 **POST /api/admin/clubs** - Создать клуб
+
 ```json
 // Request
 { "name": "Клуб", "phone": "+79991234567", "address": "Адрес" }
@@ -397,6 +423,7 @@ pc-back/
 ```
 
 **GET /api/admin/clubs** - Все клубы
+
 ```json
 // Response
 [
@@ -410,6 +437,7 @@ pc-back/
 ```
 
 **PUT /api/admin/clubs/:id** - Обновить клуб
+
 ```json
 // Request
 { "name": "Новое название", "isActive": false }
@@ -419,12 +447,14 @@ pc-back/
 ```
 
 **DELETE /api/admin/clubs/:id** - Удалить клуб
+
 ```json
 // Response
 { "message": "Клуб удален" }
 ```
 
 **GET /api/admin/users** - Все пользователи
+
 ```json
 // Query: ?role=player
 // Response
@@ -440,6 +470,7 @@ pc-back/
 ```
 
 **PUT /api/admin/users/:id** - Обновить пользователя
+
 ```json
 // Request
 { "balance": 100, "isActive": true }
@@ -449,12 +480,14 @@ pc-back/
 ```
 
 **DELETE /api/admin/users/:id** - Удалить пользователя
+
 ```json
 // Response
 { "message": "Пользователь удален" }
 ```
 
 **POST /api/admin/prizes** - Создать приз
+
 ```json
 // Request (multipart/form-data)
 // Поля: name, description, type, value, dropChance, slotIndex, totalQuantity
@@ -474,6 +507,7 @@ pc-back/
 ```
 
 **GET /api/admin/prizes** - Все призы
+
 ```json
 // Response
 [
@@ -489,6 +523,7 @@ pc-back/
 ```
 
 **PUT /api/admin/prizes/:id** - Обновить приз
+
 ```json
 // Request (multipart/form-data)
 // Поля: name, description, type, value, dropChance, slotIndex, isActive, totalQuantity
@@ -499,12 +534,14 @@ pc-back/
 ```
 
 **DELETE /api/admin/prizes/:id** - Удалить приз
+
 ```json
 // Response
 { "message": "Приз удален" }
 ```
 
 **GET /api/admin/analytics** - Аналитика
+
 ```json
 // Query: ?startDate=2024-01-01&endDate=2024-01-31
 // Response
@@ -514,16 +551,13 @@ pc-back/
   "totalSpins": 5000,
   "totalPrizes": 25,
   "totalSpent": 100000,
-  "prizeStats": [
-    { "prizeName": "100 баллов", "count": 500 }
-  ],
-  "clubStats": [
-    { "clubName": "Клуб", "count": 100 }
-  ]
+  "prizeStats": [{ "prizeName": "100 баллов", "count": 500 }],
+  "clubStats": [{ "clubName": "Клуб", "count": 100 }]
 }
 ```
 
 **PUT /api/admin/prize-fund** - Управление фондом призов
+
 ```json
 // Request
 { "prizeId": "prize_id", "totalQuantity": 200, "remainingQuantity": 150 }
@@ -537,6 +571,7 @@ pc-back/
 ```
 
 **GET /api/admin/logs** - Логи
+
 ```json
 // Query: ?type=spin_cost&startDate=2024-01-01
 // Response
@@ -579,14 +614,16 @@ pc-back/
 
 ## Загрузка изображений
 
-Система поддерживает загрузку изображений призов в AWS S3. 
+Система поддерживает загрузку изображений призов в AWS S3.
 
 **Требования:**
+
 - Форматы: JPEG, JPG, PNG, GIF, WEBP
 - Максимальный размер: 5MB
 - Поле для загрузки: `image` (multipart/form-data)
 
 **При создании/обновлении приза:**
+
 - Изображение автоматически загружается в S3
 - URL изображения сохраняется в поле `image` приза
 - При обновлении изображения старое автоматически удаляется из S3

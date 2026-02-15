@@ -5,6 +5,7 @@ const {
   getBalance,
   getTransactions,
   getClubByQR,
+  getRecentWinsHandler,
   spin,
   getPrizes,
   getRoulettePrizes,
@@ -15,6 +16,7 @@ const { protect } = require('../middleware/auth');
 // Публичные роуты (club_id можно передать в path или в query ?club=)
 router.get('/club-by-qr/:qrToken', getClubByQR);
 router.get('/club', getClubByQR);
+router.get('/recent-wins', getRecentWinsHandler);
 router.get('/roulette-prizes', getRoulettePrizes);
 
 // Защищенные роуты

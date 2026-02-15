@@ -7,6 +7,7 @@ const Transaction = require('../models/Transaction');
 const PrizeClaim = require('../models/PrizeClaim');
 const generateToken = require('../utils/generateToken');
 const { spinRoulette } = require('../utils/roulette');
+const { addRecentWin, getRecentWins } = require('../utils/recentWins');
 
 // @desc    Регистрация игрока
 // @route   POST /api/players/register
@@ -303,10 +304,13 @@ const spin = async (req, res) => {
       playerPhone: user.phone,
     };
 
-    // WebSocket: уведомить подписчиков клуба о новом спине (вместо polling)
+    // Последние 10 выигрышей по клубу для экранов: "+7 771 *** 3738 выиграл Приз"
+    addRecentWin(club._id, user.phone, prizeInfo.name);
+    const recentWins = getRecentWins(club._id);
+
     const io = req.app.get('io');
     if (io) {
-      io.to(`club:${club._id}`).emit('spin', spinPayload);
+      io.to(`club:${club._id}`).emit('spin', { ...spinPayload, recentWins });
     }
 
     res.json({
@@ -351,6 +355,37 @@ const getRoulettePrizes = async (req, res) => {
   }
 };
 
+// @desc    Последние 10 выигрышей по клубу для экранов (публично)
+// @route   GET /api/players/recent-wins?clubId=...
+// @access  Public
+const getRecentWinsHandler = async (req, res) => {
+  try {
+    const clubParam = req.query.clubId || req.params.clubId;
+    if (!clubParam) {
+      return res.status(400).json({ message: 'Передайте clubId в query: ?clubId=...' });
+    }
+
+    let club = null;
+    if (mongoose.Types.ObjectId.isValid(clubParam) && String(new mongoose.Types.ObjectId(clubParam)) === String(clubParam)) {
+      club = await Club.findOne({ _id: new mongoose.Types.ObjectId(clubParam), isActive: true });
+    }
+    if (!club) {
+      club = await Club.findOne({
+        $or: [{ clubId: clubParam }, { qrToken: clubParam }],
+        isActive: true,
+      });
+    }
+    if (!club) {
+      return res.status(404).json({ message: 'Клуб не найден' });
+    }
+
+    const list = getRecentWins(club._id);
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Привязать игрока к клубу
 // @route   POST /api/players/attach-club
 // @access  Private
@@ -384,6 +419,7 @@ module.exports = {
   getBalance,
   getTransactions,
   getClubByQR,
+  getRecentWinsHandler,
   spin,
   getPrizes,
   getRoulettePrizes,
