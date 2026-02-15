@@ -30,10 +30,16 @@ app.set('trust proxy', 1);
 
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  'https://git-front-sandy.vercel.app',
+  'http://localhost:5173',
+];
+
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
   },
   allowEIO3: true,
   transports: ['polling', 'websocket'],
@@ -43,9 +49,13 @@ const io = new Server(server, {
 
 app.set('io', io);
 
-function setCorsHeaders(res) {
+function setCorsHeaders(req, res) {
   try {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
     res.setHeader('Access-Control-Allow-Headers', '*');
   } catch (_) {}
@@ -54,7 +64,7 @@ function setCorsHeaders(res) {
 // Один обработчик request: CORS на каждый ответ, OPTIONS → 204, /socket.io → Socket.IO, остальное → Express
 server.removeAllListeners('request');
 server.on('request', (req, res) => {
-  setCorsHeaders(res);
+  setCorsHeaders(req, res);
   if (req.method === 'OPTIONS') {
     res.writeHead(204).end();
     return;
@@ -109,12 +119,10 @@ io.on('connection', (socket) => {
     .catch(() => {});
 });
 
-// Middleware — CORS без ограничений, с любого origin
+// Middleware — CORS только с разрешённых origin, credentials для куки/токенов
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
-  allowedHeaders: '*',
-  credentials: false,
+  origin: allowedOrigins,
+  credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
