@@ -30,14 +30,10 @@ app.set('trust proxy', 1);
 
 const server = http.createServer(app);
 
-// CORS для сокетов: несколько origin или любой (прокси часто меняет Origin)
-const corsOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
-  : ['*'];
 const io = new Server(server, {
   cors: {
-    origin: corsOrigins.length ? corsOrigins : '*',
-    methods: ['GET', 'POST'],
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   },
   allowEIO3: true,
   transports: ['polling', 'websocket'],
@@ -84,8 +80,13 @@ io.on('connection', (socket) => {
     .catch(() => {});
 });
 
-// Middleware
-app.use(cors());
+// Middleware — CORS без ограничений, с любого origin
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: '*',
+  credentials: false,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
