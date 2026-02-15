@@ -43,11 +43,24 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+// CORS-заголовки вручную (на случай если cors() не сработает за прокси)
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+}
+
 // Маршрутизация на уровне сервера: /socket.io → Socket.IO, остальное → Express
 server.removeAllListeners('request');
 server.on('request', (req, res) => {
+  setCorsHeaders(res);
   const path = ((req.url || '').split('?')[0] || '').replace(/^\/+|\/+$/g, '') || '/';
   const isSocketIo = path === 'socket.io' || path.startsWith('socket.io/');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   if (isSocketIo) {
     io.engine.handleRequest(req, res);
   } else {
