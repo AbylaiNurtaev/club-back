@@ -47,6 +47,15 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+// Важно: передавать /socket.io/ в Socket.IO, иначе Express отдаёт 404
+app.use((req, res, next) => {
+  if (req.url && req.url.startsWith('/socket.io')) {
+    io.engine.handleRequest(req, res);
+    return;
+  }
+  next();
+});
+
 // Подключение к комнате клуба по clubId (Mongo _id, clubId или qrToken)
 io.on('connection', (socket) => {
   const clubIdOrToken = socket.handshake.query?.clubId;
