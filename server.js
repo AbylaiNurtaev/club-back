@@ -48,11 +48,11 @@ const io = new Server(server, {
 app.set('io', io);
 
 // Маршрутизация на уровне сервера: /socket.io → Socket.IO, остальное → Express
-// (иначе Express обрабатывает запрос первым и отдаёт 404 для /socket.io)
 server.removeAllListeners('request');
 server.on('request', (req, res) => {
-  const path = (req.url || '').split('?')[0];
-  if (path.startsWith('/socket.io')) {
+  const path = ((req.url || '').split('?')[0] || '').replace(/^\/+|\/+$/g, '') || '/';
+  const isSocketIo = path === 'socket.io' || path.startsWith('socket.io/');
+  if (isSocketIo) {
     io.engine.handleRequest(req, res);
   } else {
     app(req, res);
@@ -116,7 +116,10 @@ app.use((err, req, res, next) => {
 
 // 404
 app.use((req, res) => {
-  res.status(404).json({ message: 'Маршрут не найден' });
+  res.status(404).json({
+    message: 'Маршрут не найден',
+    path: req.url?.split('?')[0] || req.path,
+  });
 });
 
 const PORT = process.env.PORT || 3000;
