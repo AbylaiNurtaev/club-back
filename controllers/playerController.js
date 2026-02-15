@@ -287,21 +287,30 @@ const spin = async (req, res) => {
     // Получаем полную информацию о призе с изображением
     const prizeInfo = await Prize.findById(prize._id).select('name description type value image dropChance slotIndex');
 
-    res.json({
-      spin: {
-        _id: spin._id,
-        prize: {
-          _id: prizeInfo._id,
-          name: prizeInfo.name,
-          description: prizeInfo.description,
-          type: prizeInfo.type,
-          value: prizeInfo.value,
-          image: prizeInfo.image, // URL изображения из S3
-          slotIndex: prizeInfo.slotIndex,
-        },
-        cost: spinCost,
-        createdAt: spin.createdAt,
+    const spinPayload = {
+      _id: spin._id,
+      prize: {
+        _id: prizeInfo._id,
+        name: prizeInfo.name,
+        description: prizeInfo.description,
+        type: prizeInfo.type,
+        value: prizeInfo.value,
+        image: prizeInfo.image,
+        slotIndex: prizeInfo.slotIndex,
       },
+      cost: spinCost,
+      createdAt: spin.createdAt,
+      playerPhone: user.phone,
+    };
+
+    // WebSocket: уведомить подписчиков клуба о новом спине (вместо polling)
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`club:${club._id}`).emit('spin', spinPayload);
+    }
+
+    res.json({
+      spin: spinPayload,
       newBalance: user.balance,
       prizeTransaction,
     });
