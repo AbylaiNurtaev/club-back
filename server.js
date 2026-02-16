@@ -94,7 +94,7 @@ server.on('request', (req, res) => {
   }
 });
 
-// Подключение к комнате клуба по clubId (Mongo _id, clubId или qrToken)
+// Подключение к комнате клуба по clubId (Mongo _id, clubId, qrToken или pinCode — 6 цифр)
 io.on('connection', (socket) => {
   const clubIdOrToken = socket.handshake.query?.clubId;
   if (!clubIdOrToken) return;
@@ -104,10 +104,9 @@ io.on('connection', (socket) => {
       const byId = await Club.findOne({ _id: new mongoose.Types.ObjectId(clubIdOrToken), isActive: true });
       if (byId) return byId;
     }
-    return Club.findOne({
-      $or: [{ clubId: clubIdOrToken }, { qrToken: clubIdOrToken }],
-      isActive: true,
-    });
+    const cond = [{ clubId: clubIdOrToken }, { qrToken: clubIdOrToken }];
+    if (/^\d{6}$/.test(String(clubIdOrToken).trim())) cond.push({ pinCode: String(clubIdOrToken).trim() });
+    return Club.findOne({ $or: cond, isActive: true });
   };
 
   resolveClub()

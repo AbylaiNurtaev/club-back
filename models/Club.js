@@ -23,6 +23,14 @@ const clubSchema = new mongoose.Schema({
     required: true,
     default: () => uuidv4(),
   },
+  /** Код из 6 цифр для ввода на телефоне, если нет QR (уникальный) */
+  pinCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    match: /^\d{6}$/,
+  },
   qrCode: {
     type: String, // Base64 или URL QR-кода
   },

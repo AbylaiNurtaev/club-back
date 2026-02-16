@@ -140,20 +140,23 @@ const getTransactions = async (req, res) => {
   }
 };
 
-// @desc    Получить клуб по club_id / qrToken / clubId (для ссылки из QR)
+// @desc    Получить клуб по club_id / qrToken / clubId / pinCode (6 цифр для ввода без QR)
 // @route   GET /api/players/club-by-qr/:qrToken  или  GET /api/players/club?club=...
 // @access  Public
 const getClubByQR = async (req, res) => {
   try {
     const token = req.params.qrToken || req.query.club;
     if (!token) {
-      return res.status(400).json({ message: 'Передайте club_id, qrToken или clubId (в path или ?club=)' });
+      return res.status(400).json({ message: 'Передайте club_id, qrToken, clubId или pinCode (6 цифр)' });
     }
 
     const conditions = [
       { qrToken: token, isActive: true },
       { clubId: token, isActive: true },
     ];
+    if (/^\d{6}$/.test(String(token).trim())) {
+      conditions.push({ pinCode: String(token).trim(), isActive: true });
+    }
     if (mongoose.Types.ObjectId.isValid(token) && String(new mongoose.Types.ObjectId(token)) === String(token)) {
       conditions.push({ _id: new mongoose.Types.ObjectId(token), isActive: true });
     }
@@ -169,155 +172,171 @@ const getClubByQR = async (req, res) => {
       name: club.name,
       clubId: club.clubId,
       qrToken: club.qrToken,
+      pinCode: club.pinCode,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Прокрутить рулетку
+// Общая логика спина (клуб уже найден, юзер уже есть)
+async function doSpin(user, club, req, res) {
+  const spinCost = 20;
+  if (user.balance < spinCost) {
+    return res.status(400).json({ message: 'Недостаточно баллов для прокрутки' });
+  }
+
+  const prize = await spinRoulette();
+  if (prize.totalQuantity !== null && prize.remainingQuantity <= 0) {
+    return res.status(400).json({ message: 'Приз закончился' });
+  }
+
+  const spin = await Spin.create({
+    userId: user._id,
+    clubId: club._id,
+    prizeId: prize._id,
+    cost: spinCost,
+    status: 'confirmed',
+  });
+
+  user.balance -= spinCost;
+  await user.save();
+
+  await Transaction.create({
+    userId: user._id,
+    type: 'spin_cost',
+    amount: -spinCost,
+    description: `Списание за прокрутку рулетки`,
+    relatedSpinId: spin._id,
+  });
+
+  let prizeTransaction = null;
+  if (prize.type === 'points') {
+    user.balance += prize.value;
+    await user.save();
+    prizeTransaction = await Transaction.create({
+      userId: user._id,
+      type: 'prize_points',
+      amount: prize.value,
+      description: `Выигрыш: ${prize.name}`,
+      relatedSpinId: spin._id,
+    });
+  } else if (prize.type === 'club_time') {
+    await PrizeClaim.create({
+      userId: user._id,
+      spinId: spin._id,
+      prizeId: prize._id,
+      clubId: club._id,
+      status: 'completed',
+      confirmedAt: new Date(),
+      clubTimeMinutes: prize.value,
+    });
+  } else {
+    await PrizeClaim.create({
+      userId: user._id,
+      spinId: spin._id,
+      prizeId: prize._id,
+      clubId: club._id,
+      status: 'completed',
+      confirmedAt: new Date(),
+    });
+  }
+
+  if (prize.totalQuantity !== null) {
+    prize.remainingQuantity = Math.max(0, prize.remainingQuantity - 1);
+    await prize.save();
+  }
+
+  const prizeInfo = await Prize.findById(prize._id).select('name description type value image dropChance slotIndex');
+  const spinPayload = {
+    _id: spin._id,
+    prize: {
+      _id: prizeInfo._id,
+      name: prizeInfo.name,
+      description: prizeInfo.description,
+      type: prizeInfo.type,
+      value: prizeInfo.value,
+      image: prizeInfo.image,
+      slotIndex: prizeInfo.slotIndex,
+    },
+    cost: spinCost,
+    createdAt: spin.createdAt,
+    playerPhone: user.phone,
+  };
+
+  addRecentWin(user.phone, prizeInfo.name);
+  const recentWinsList = getRecentWins();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`club:${club._id}`).emit('spin', { ...spinPayload, recentWins: recentWinsList });
+  }
+
+  return res.json({
+    spin: spinPayload,
+    newBalance: user.balance,
+    prizeTransaction,
+  });
+}
+
+async function resolveClub(clubParam) {
+  if (!clubParam) return null;
+  if (mongoose.Types.ObjectId.isValid(clubParam) && String(new mongoose.Types.ObjectId(clubParam)) === String(clubParam)) {
+    const c = await Club.findById(clubParam);
+    if (c) return c;
+  }
+  const cond = [{ clubId: clubParam }, { qrToken: clubParam }];
+  if (/^\d{6}$/.test(String(clubParam).trim())) cond.push({ pinCode: String(clubParam).trim() });
+  return Club.findOne({ $or: cond, isActive: true });
+}
+
+// @desc    Прокрутить рулетку (по токену игрока)
 // @route   POST /api/players/spin
 // @access  Private
 const spin = async (req, res) => {
   try {
     const { clubId: clubParam } = req.body;
-
     if (!clubParam) {
       return res.status(400).json({ message: 'ID клуба обязателен' });
     }
-
-    // Разрешаем клуб по _id (Mongo), по clubId (строка) или по qrToken (из ссылки QR)
-    let club = null;
-    if (mongoose.Types.ObjectId.isValid(clubParam) && String(new mongoose.Types.ObjectId(clubParam)) === String(clubParam)) {
-      club = await Club.findById(clubParam);
-    }
-    if (!club) {
-      club = await Club.findOne({
-        $or: [
-          { clubId: clubParam },
-          { qrToken: clubParam },
-        ],
-        isActive: true,
-      });
-    }
+    const club = await resolveClub(clubParam);
     if (!club || !club.isActive) {
       return res.status(404).json({ message: 'Клуб не найден или неактивен' });
     }
-
     const user = await User.findById(req.user._id);
+    return doSpin(user, club, req, res);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
-    // Проверка баланса
-    const spinCost = 20;
-    if (user.balance < spinCost) {
-      return res.status(400).json({ message: 'Недостаточно баллов для прокрутки' });
+// @desc    Прокрутить рулетку по телефону (без токена)
+// @route   POST /api/players/spin-by-phone
+// @access  Public
+const spinByPhone = async (req, res) => {
+  try {
+    const { clubId: clubParam, phone } = req.body;
+    if (!clubParam) {
+      return res.status(400).json({ message: 'ID клуба обязателен (или 6-значный код)' });
     }
-
-    // Выбор приза
-    const prize = await spinRoulette();
-
-    // Проверка наличия приза
-    if (prize.totalQuantity !== null && prize.remainingQuantity <= 0) {
-      return res.status(400).json({ message: 'Приз закончился' });
+    if (!phone) {
+      return res.status(400).json({ message: 'Телефон обязателен' });
     }
-
-    // Создание спина
-    const spin = await Spin.create({
-      userId: user._id,
-      clubId: club._id,
-      prizeId: prize._id,
-      cost: spinCost,
-      status: 'confirmed',
+    const club = await resolveClub(clubParam);
+    if (!club || !club.isActive) {
+      return res.status(404).json({ message: 'Клуб не найден или неактивен' });
+    }
+    const normalized = String(phone).replace(/\D/g, '').replace(/^8/, '7');
+    const user = await User.findOne({
+      $or: [{ phone: normalized }, { phone: '+' + normalized }],
     });
-
-    // Списание баллов
-    user.balance -= spinCost;
-    await user.save();
-
-    // Создание транзакции на списание
-    await Transaction.create({
-      userId: user._id,
-      type: 'spin_cost',
-      amount: -spinCost,
-      description: `Списание за прокрутку рулетки`,
-      relatedSpinId: spin._id,
-    });
-
-    // Обработка приза
-    let prizeTransaction = null;
-    if (prize.type === 'points') {
-      // Начисление баллов
-      user.balance += prize.value;
-      await user.save();
-      
-      prizeTransaction = await Transaction.create({
-        userId: user._id,
-        type: 'prize_points',
-        amount: prize.value,
-        description: `Выигрыш: ${prize.name}`,
-        relatedSpinId: spin._id,
-      });
-    } else if (prize.type === 'club_time') {
-      // Приз сразу присваивается игроку, подтверждение не требуется
-      await PrizeClaim.create({
-        userId: user._id,
-        spinId: spin._id,
-        prizeId: prize._id,
-        clubId: club._id,
-        status: 'completed',
-        confirmedAt: new Date(),
-        clubTimeMinutes: prize.value,
-      });
-    } else {
-      // Физический приз и др. — сразу присваиваются, подтверждение не требуется
-      await PrizeClaim.create({
-        userId: user._id,
-        spinId: spin._id,
-        prizeId: prize._id,
-        clubId: club._id,
-        status: 'completed',
-        confirmedAt: new Date(),
-      });
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь с таким телефоном не найден' });
     }
-
-    // Уменьшение количества приза
-    if (prize.totalQuantity !== null) {
-      prize.remainingQuantity = Math.max(0, prize.remainingQuantity - 1);
-      await prize.save();
+    if (user.role !== 'player') {
+      return res.status(403).json({ message: 'Этот телефон не зарегистрирован как игрок' });
     }
-
-    // Получаем полную информацию о призе с изображением
-    const prizeInfo = await Prize.findById(prize._id).select('name description type value image dropChance slotIndex');
-
-    const spinPayload = {
-      _id: spin._id,
-      prize: {
-        _id: prizeInfo._id,
-        name: prizeInfo.name,
-        description: prizeInfo.description,
-        type: prizeInfo.type,
-        value: prizeInfo.value,
-        image: prizeInfo.image,
-        slotIndex: prizeInfo.slotIndex,
-      },
-      cost: spinCost,
-      createdAt: spin.createdAt,
-      playerPhone: user.phone,
-    };
-
-    // Последние 10 выигрышей по клубу для экранов: "+7 771 *** 3738 выиграл Приз"
-    addRecentWin(club._id, user.phone, prizeInfo.name);
-    const recentWins = getRecentWins(club._id);
-
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`club:${club._id}`).emit('spin', { ...spinPayload, recentWins });
-    }
-
-    res.json({
-      spin: spinPayload,
-      newBalance: user.balance,
-      prizeTransaction,
-    });
+    return doSpin(user, club, req, res);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -355,32 +374,12 @@ const getRoulettePrizes = async (req, res) => {
   }
 };
 
-// @desc    Последние 10 выигрышей по клубу для экранов (публично)
-// @route   GET /api/players/recent-wins?clubId=...
+// @desc    Последние 10 выигрышей по всем клубам для экранов (публично)
+// @route   GET /api/players/recent-wins
 // @access  Public
 const getRecentWinsHandler = async (req, res) => {
   try {
-    const clubParam = req.query.clubId || req.params.clubId;
-    if (!clubParam) {
-      return res.status(400).json({ message: 'Передайте clubId в query: ?clubId=...' });
-    }
-
-    let club = null;
-    if (mongoose.Types.ObjectId.isValid(clubParam) && String(new mongoose.Types.ObjectId(clubParam)) === String(clubParam)) {
-      club = await Club.findOne({ _id: new mongoose.Types.ObjectId(clubParam), isActive: true });
-    }
-    if (!club) {
-      club = await Club.findOne({
-        $or: [{ clubId: clubParam }, { qrToken: clubParam }],
-        isActive: true,
-      });
-    }
-    if (!club) {
-      return res.status(404).json({ message: 'Клуб не найден' });
-    }
-
-    const list = getRecentWins(club._id);
-    res.json(list);
+    res.json(getRecentWins());
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -421,6 +420,7 @@ module.exports = {
   getClubByQR,
   getRecentWinsHandler,
   spin,
+  spinByPhone,
   getPrizes,
   getRoulettePrizes,
   attachClub,

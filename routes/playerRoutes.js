@@ -7,6 +7,7 @@ const {
   getClubByQR,
   getRecentWinsHandler,
   spin,
+  spinByPhone,
   getPrizes,
   getRoulettePrizes,
   attachClub,
@@ -18,6 +19,7 @@ router.get('/club-by-qr/:qrToken', getClubByQR);
 router.get('/club', getClubByQR);
 router.get('/recent-wins', getRecentWinsHandler);
 router.get('/roulette-prizes', getRoulettePrizes);
+router.post('/spin-by-phone', spinByPhone);
 
 // Защищенные роуты
 router.get('/me', protect, getMe);

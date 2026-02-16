@@ -40,11 +40,21 @@ const registerClub = async (req, res) => {
     // Генерируем уникальный clubId
     const clubId = `club_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    // Уникальный 6-значный код для ввода на телефоне (если нет QR)
+    let pinCode;
+    for (let i = 0; i < 20; i++) {
+      pinCode = String(Math.floor(100000 + Math.random() * 900000));
+      const exists = await Club.findOne({ pinCode });
+      if (!exists) break;
+    }
+    if (!pinCode) pinCode = String(Date.now()).slice(-6);
+
     // Создаем клуб
     const club = await Club.create({
       name,
       ownerId: owner._id,
       clubId,
+      pinCode,
       address,
       city: city || '',
       managerFio: managerFio || undefined,
@@ -63,6 +73,7 @@ const registerClub = async (req, res) => {
         name: club.name,
         clubId: club.clubId,
         qrToken: club.qrToken,
+        pinCode: club.pinCode,
         qrCode: club.qrCode,
         address: club.address,
         city: club.city,
@@ -89,6 +100,20 @@ const getMyClub = async (req, res) => {
 
     if (!club) {
       return res.status(404).json({ message: 'Клуб не найден' });
+    }
+
+    // Для старых клубов без pinCode — сгенерировать при первом заходе
+    if (!club.pinCode) {
+      let pinCode;
+      for (let i = 0; i < 20; i++) {
+        pinCode = String(Math.floor(100000 + Math.random() * 900000));
+        const exists = await Club.findOne({ pinCode });
+        if (!exists) break;
+      }
+      if (pinCode) {
+        club.pinCode = pinCode;
+        await club.save();
+      }
     }
 
     res.json(club);
