@@ -301,6 +301,7 @@ async function doSpin(user, club, req, res) {
     cost: spinCost,
     createdAt: spin.createdAt,
     playerPhone: user.phone,
+    playerName: user.name,
   };
 
   addRecentWin(user.phone, prizeInfo.name);

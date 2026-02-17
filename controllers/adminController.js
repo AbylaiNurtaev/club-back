@@ -4,6 +4,7 @@ const Prize = require('../models/Prize');
 const Spin = require('../models/Spin');
 const Transaction = require('../models/Transaction');
 const PrizeClaim = require('../models/PrizeClaim');
+const CompanySettings = require('../models/CompanySettings');
 const generateToken = require('../utils/generateToken');
 const QRCode = require('qrcode');
 const { deleteFromS3 } = require('../utils/s3Upload');
@@ -287,6 +288,88 @@ const getUserById = async (req, res) => {
     userObj.balanceHistory = transactions;
 
     res.json(userObj);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Забанить пользователя (временно или навсегда)
+// @route   POST /api/admin/users/:id/ban
+// @access  Private/Admin
+const banUser = async (req, res) => {
+  try {
+    const { days, reason } = req.body;
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(400).json({ message: 'Нельзя заблокировать администратора' });
+    }
+
+    let banUntil = null;
+    if (days != null) {
+      const parsedDays = Number(days);
+      if (!Number.isFinite(parsedDays) || parsedDays < 0) {
+        return res.status(400).json({ message: 'days должен быть неотрицательным числом' });
+      }
+      if (parsedDays > 0) {
+        const msPerDay = 24 * 60 * 60 * 1000;
+        banUntil = new Date(Date.now() + parsedDays * msPerDay);
+      }
+    }
+
+    user.isBanned = true;
+    user.isActive = false;
+    user.banUntil = banUntil;
+    if (reason !== undefined) {
+      user.banReason = String(reason);
+    }
+
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      phone: user.phone,
+      role: user.role,
+      isBanned: user.isBanned,
+      isActive: user.isActive,
+      banUntil: user.banUntil,
+      banReason: user.banReason,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Разбанить пользователя
+// @route   POST /api/admin/users/:id/unban
+// @access  Private/Admin
+const unbanUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    user.isBanned = false;
+    user.isActive = true;
+    user.banUntil = null;
+    user.banReason = '';
+
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      phone: user.phone,
+      role: user.role,
+      isBanned: user.isBanned,
+      isActive: user.isActive,
+      banUntil: user.banUntil,
+      banReason: user.banReason,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -753,6 +836,87 @@ const getLogs = async (req, res) => {
   }
 };
 
+// @desc    Получить логотип компании
+// @route   GET /api/admin/company/logo
+// @access  Private/Admin
+const getCompanyLogo = async (req, res) => {
+  try {
+    const settings = await CompanySettings.findOne().lean();
+
+    if (!settings || !settings.logoUrl) {
+      return res.status(404).json({ message: 'Логотип компании не задан' });
+    }
+
+    res.json({
+      _id: settings._id,
+      logoUrl: settings.logoUrl,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Создать или обновить логотип компании
+// @route   POST /api/admin/company/logo
+// @access  Private/Admin
+const upsertCompanyLogo = async (req, res) => {
+  try {
+    if (!req.file || !req.file.location) {
+      return res.status(400).json({ message: 'Файл логотипа обязателен' });
+    }
+
+    let settings = await CompanySettings.findOne();
+
+    if (!settings) {
+      settings = await CompanySettings.create({
+        logoUrl: req.file.location,
+      });
+    } else {
+      // Удаляем старый логотип из S3, если он был
+      if (settings.logoUrl && settings.logoUrl !== req.file.location) {
+        await deleteFromS3(settings.logoUrl);
+      }
+      settings.logoUrl = req.file.location;
+      await settings.save();
+    }
+
+    res.status(201).json({
+      _id: settings._id,
+      logoUrl: settings.logoUrl,
+    });
+  } catch (error) {
+    // Если была загружена картинка, но произошла ошибка, удаляем её
+    if (req.file && req.file.location) {
+      await deleteFromS3(req.file.location);
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Удалить логотип компании
+// @route   DELETE /api/admin/company/logo
+// @access  Private/Admin
+const deleteCompanyLogo = async (req, res) => {
+  try {
+    const settings = await CompanySettings.findOne();
+
+    if (!settings || !settings.logoUrl) {
+      return res.status(404).json({ message: 'Логотип компании не найден' });
+    }
+
+    if (settings.logoUrl) {
+      await deleteFromS3(settings.logoUrl);
+    }
+
+    settings.logoUrl = null;
+    await settings.save();
+
+    res.json({ message: 'Логотип компании удалён' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   loginAdmin,
   createClub,
@@ -763,6 +927,8 @@ module.exports = {
   getUserById,
   updateUser,
   deleteUser,
+  banUser,
+  unbanUser,
   createPrize,
   getPrizes,
   updatePrize,
@@ -772,4 +938,7 @@ module.exports = {
   getClubAnalytics,
   updatePrizeFund,
   getLogs,
+  getCompanyLogo,
+  upsertCompanyLogo,
+  deleteCompanyLogo,
 };

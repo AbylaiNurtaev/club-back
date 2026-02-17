@@ -9,6 +9,8 @@ const {
   getUserById,
   updateUser,
   deleteUser,
+  banUser,
+  unbanUser,
   createPrize,
   getPrizes,
   updatePrize,
@@ -18,6 +20,9 @@ const {
   getClubAnalytics,
   updatePrizeFund,
   getLogs,
+  getCompanyLogo,
+  upsertCompanyLogo,
+  deleteCompanyLogo,
 } = require('../controllers/adminController');
 const { protect, authorize } = require('../middleware/auth');
 const { upload, uploadToS3 } = require('../utils/s3Upload');
@@ -39,6 +44,8 @@ router.get('/users', getUsers);
 router.get('/users/:id', getUserById);
 router.put('/users/:id', updateUser);
 router.delete('/users/:id', deleteUser);
+router.post('/users/:id/ban', banUser);
+router.post('/users/:id/unban', unbanUser);
 
 // Управление призами
 router.post('/prizes', upload.single('image'), uploadToS3, createPrize);
@@ -52,5 +59,10 @@ router.get('/analytics/by-city', getAnalyticsByCity);
 router.get('/analytics/club/:id', getClubAnalytics);
 router.put('/prize-fund', updatePrizeFund);
 router.get('/logs', getLogs);
+
+// Логотип компании
+router.get('/company/logo', getCompanyLogo);
+router.post('/company/logo', upload.single('image'), uploadToS3, upsertCompanyLogo);
+router.delete('/company/logo', deleteCompanyLogo);
 
 module.exports = router;

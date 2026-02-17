@@ -40,6 +40,25 @@ const login = async (req, res) => {
       });
     }
 
+    // Проверка бана
+    if (user.isBanned) {
+      const now = new Date();
+      if (user.banUntil && user.banUntil <= now) {
+        // Срок бана истёк — автоматически разбаниваем
+        user.isBanned = false;
+        user.isActive = true;
+        user.banUntil = null;
+        user.banReason = '';
+        await user.save();
+      } else {
+        return res.status(403).json({
+          message: user.banUntil
+            ? `Ваш аккаунт заблокирован до ${user.banUntil.toLocaleString('ru-RU')}`
+            : 'Ваш аккаунт заблокирован бессрочно',
+        });
+      }
+    }
+
     // Подготавливаем ответ в зависимости от роли
     const response = {
       _id: user._id,
