@@ -46,6 +46,9 @@ const clubSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /** Геолокация клуба (для проверки дистанции перед спином) */
+  latitude: { type: Number },
+  longitude: { type: Number },
   managerFio: {
     type: String,
     trim: true,

@@ -52,10 +52,15 @@ const loginAdmin = async (req, res) => {
 // @access  Private/Admin
 const createClub = async (req, res) => {
   try {
-    const { name, phone, address, city, managerFio } = req.body;
+    const { name, phone, address, city, managerFio, latitude, longitude } = req.body;
 
     if (!name || !phone) {
       return res.status(400).json({ message: 'Название и телефон обязательны' });
+    }
+    const lat = latitude != null ? Number(latitude) : null;
+    const lng = longitude != null ? Number(longitude) : null;
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({ message: 'Укажите latitude и longitude (геолокация клуба)' });
     }
 
     let owner = await User.findOne({ phone });
@@ -82,6 +87,8 @@ const createClub = async (req, res) => {
       name,
       ownerId: owner._id,
       clubId,
+      latitude: lat,
+      longitude: lng,
       address,
       city: city || '',
       managerFio: managerFio || undefined,
@@ -134,7 +141,7 @@ const getClubs = async (req, res) => {
 // @access  Private/Admin
 const updateClub = async (req, res) => {
   try {
-    const { name, address, city, isActive, managerFio } = req.body;
+    const { name, address, city, isActive, managerFio, latitude, longitude } = req.body;
 
     const club = await Club.findById(req.params.id);
     if (!club) {
@@ -146,6 +153,8 @@ const updateClub = async (req, res) => {
     if (city !== undefined) club.city = city;
     if (isActive !== undefined) club.isActive = isActive;
     if (managerFio !== undefined) club.managerFio = managerFio;
+    if (latitude !== undefined) club.latitude = Number(latitude);
+    if (longitude !== undefined) club.longitude = Number(longitude);
 
     await club.save();
 

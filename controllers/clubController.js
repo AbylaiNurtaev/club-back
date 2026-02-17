@@ -11,10 +11,15 @@ const QRCode = require('qrcode');
 // @access  Private/Admin
 const registerClub = async (req, res) => {
   try {
-    const { name, phone, address, city, managerFio } = req.body;
+    const { name, phone, address, city, managerFio, latitude, longitude } = req.body;
 
     if (!name || !phone) {
       return res.status(400).json({ message: 'Название и телефон обязательны' });
+    }
+    const lat = latitude != null ? Number(latitude) : null;
+    const lng = longitude != null ? Number(longitude) : null;
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({ message: 'Укажите latitude и longitude (геолокация клуба)' });
     }
 
     // Проверка существования пользователя с таким телефоном
@@ -55,6 +60,8 @@ const registerClub = async (req, res) => {
       ownerId: owner._id,
       clubId,
       pinCode,
+      latitude: lat,
+      longitude: lng,
       address,
       city: city || '',
       managerFio: managerFio || undefined,
@@ -75,6 +82,8 @@ const registerClub = async (req, res) => {
         qrToken: club.qrToken,
         pinCode: club.pinCode,
         qrCode: club.qrCode,
+        latitude: club.latitude,
+        longitude: club.longitude,
         address: club.address,
         city: club.city,
         managerFio: club.managerFio,
