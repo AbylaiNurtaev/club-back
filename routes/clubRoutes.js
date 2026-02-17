@@ -10,6 +10,7 @@ const {
   confirmPrizeClaim,
   manageClubTime,
   getReports,
+  getSpinsToday,
 } = require('../controllers/clubController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -24,6 +25,7 @@ router.get('/prize-claims', protect, authorize('club', 'admin'), getPrizeClaims)
 router.put('/prize-claims/:claimId/confirm', protect, authorize('club', 'admin'), confirmPrizeClaim);
 router.put('/prize-claims/:claimId/club-time', protect, authorize('club', 'admin'), manageClubTime);
 router.get('/reports', protect, authorize('club', 'admin'), getReports);
+router.get('/spins-today', protect, authorize('club', 'admin'), getSpinsToday);
 
 // Роуты только для админа
 router.post('/register', protect, authorize('admin'), registerClub);

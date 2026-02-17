@@ -363,6 +363,37 @@ const getReports = async (req, res) => {
   }
 };
 
+// @desc    Количество спинов за сегодня для текущего клуба
+// @route   GET /api/clubs/spins-today
+// @access  Private/Club
+const getSpinsToday = async (req, res) => {
+  try {
+    const club = await Club.findOne({ ownerId: req.user._id });
+
+    if (!club) {
+      return res.status(404).json({ message: 'Клуб не найден' });
+    }
+
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const spinsToday = await Spin.countDocuments({
+      clubId: club._id,
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    res.json({
+      date: startOfDay.toISOString().slice(0, 10),
+      spinsToday,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Регистрация/вход для клуба
 // @route   POST /api/clubs/login
 // @access  Public
@@ -412,5 +443,6 @@ module.exports = {
   confirmPrizeClaim,
   manageClubTime,
   getReports,
+   getSpinsToday,
   loginClub,
 };
