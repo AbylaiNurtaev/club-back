@@ -120,6 +120,35 @@ const getMe = async (req, res) => {
   }
 };
 
+// @desc    Обновить профиль текущего игрока (имя)
+// @route   PATCH /api/players/me
+// @access  Private
+const updateMe = async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ message: 'Имя не может быть пустым' });
+      }
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    if (name !== undefined) user.name = name.trim();
+    await user.save();
+
+    const updated = await User.findById(user._id)
+      .select('-password')
+      .populate('clubId', 'name clubId');
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Получить баланс игрока
 // @route   GET /api/players/balance
 // @access  Private
@@ -485,6 +514,7 @@ module.exports = {
   registerPlayer,
   loginPlayer,
   getMe,
+  updateMe,
   getBalance,
   getTransactions,
   getClubByQR,

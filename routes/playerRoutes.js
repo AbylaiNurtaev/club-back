@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getMe,
+  updateMe,
   getBalance,
   getTransactions,
   getClubByQR,
@@ -23,6 +24,7 @@ router.post('/spin-by-phone', spinByPhone);
 
 // Защищенные роуты
 router.get('/me', protect, getMe);
+router.patch('/me', protect, updateMe);
 router.get('/balance', protect, getBalance);
 router.get('/transactions', protect, getTransactions);
 router.get('/prizes', protect, getPrizes);
