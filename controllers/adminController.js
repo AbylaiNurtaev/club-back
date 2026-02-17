@@ -141,7 +141,7 @@ const getClubs = async (req, res) => {
 // @access  Private/Admin
 const updateClub = async (req, res) => {
   try {
-    const { name, address, city, isActive, managerFio, latitude, longitude } = req.body;
+    const { name, address, city, isActive, managerFio, latitude, longitude, theme } = req.body;
 
     const club = await Club.findById(req.params.id);
     if (!club) {
@@ -155,6 +155,13 @@ const updateClub = async (req, res) => {
     if (managerFio !== undefined) club.managerFio = managerFio;
     if (latitude !== undefined) club.latitude = Number(latitude);
     if (longitude !== undefined) club.longitude = Number(longitude);
+    if (theme !== undefined && theme !== null) {
+      club.theme = {
+        primary: theme.primary != null ? String(theme.primary).trim() : undefined,
+        primaryDark: theme.primaryDark != null ? String(theme.primaryDark).trim() : undefined,
+        accent: theme.accent != null ? String(theme.accent).trim() : undefined,
+      };
+    }
 
     await club.save();
 

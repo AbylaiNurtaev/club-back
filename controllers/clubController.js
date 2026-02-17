@@ -131,6 +131,30 @@ const getMyClub = async (req, res) => {
   }
 };
 
+// @desc    Обновить тему текущего клуба (PATCH /clubs/me)
+// @route   PATCH /api/clubs/me
+// @access  Private/Club
+const updateMyClubTheme = async (req, res) => {
+  try {
+    const club = await Club.findOne({ ownerId: req.user._id });
+    if (!club) {
+      return res.status(404).json({ message: 'Клуб не найден' });
+    }
+    const { theme } = req.body;
+    if (theme !== undefined && theme !== null) {
+      club.theme = {
+        primary: theme.primary != null ? String(theme.primary).trim() : undefined,
+        primaryDark: theme.primaryDark != null ? String(theme.primaryDark).trim() : undefined,
+        accent: theme.accent != null ? String(theme.accent).trim() : undefined,
+      };
+      await club.save();
+    }
+    res.json(club);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Получить всех игроков клуба (кто крутил рулетку этого клуба)
 // @route   GET /api/clubs/players
 // @access  Private/Club
@@ -381,6 +405,7 @@ const loginClub = async (req, res) => {
 module.exports = {
   registerClub,
   getMyClub,
+  updateMyClubTheme,
   getClubPlayers,
   getPlayersStats,
   getPrizeClaims,

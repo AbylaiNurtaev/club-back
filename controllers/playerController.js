@@ -8,17 +8,20 @@ const PrizeClaim = require('../models/PrizeClaim');
 const generateToken = require('../utils/generateToken');
 const { spinRoulette } = require('../utils/roulette');
 const { addRecentWin, getRecentWins } = require('../utils/recentWins');
-const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M } = require('../utils/geo');
+const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M, distanceMeters } = require('../utils/geo');
 
 // @desc    Регистрация игрока
 // @route   POST /api/players/register
 // @access  Public
 const registerPlayer = async (req, res) => {
   try {
-    const { phone, code } = req.body;
+    const { phone, code, name } = req.body;
 
     if (!phone || !code) {
       return res.status(400).json({ message: 'Телефон и код обязательны' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'Имя обязательно' });
     }
 
     // Проверка кода (пока всегда 0000)
@@ -35,6 +38,7 @@ const registerPlayer = async (req, res) => {
     // Создание пользователя
     const user = await User.create({
       phone,
+      name: name.trim(),
       password: 'default', // Временный пароль, можно изменить
       role: 'player',
       balance: 15, // Бонус за регистрацию
@@ -51,6 +55,7 @@ const registerPlayer = async (req, res) => {
     res.status(201).json({
       _id: user._id,
       phone: user.phone,
+      name: user.name,
       balance: user.balance,
       role: user.role,
       token: generateToken(user._id),
@@ -89,6 +94,7 @@ const loginPlayer = async (req, res) => {
     res.json({
       _id: user._id,
       phone: user.phone,
+      name: user.name,
       balance: user.balance,
       role: user.role,
       clubId: user.clubId,
@@ -176,6 +182,7 @@ const getClubByQR = async (req, res) => {
       pinCode: club.pinCode,
       latitude: club.latitude,
       longitude: club.longitude,
+      theme: club.theme,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -311,21 +318,51 @@ function checkGeoBeforeSpin(club, latitude, longitude, res) {
   return null;
 }
 
+// Найти ближайший клуб в радиусе 200 м от точки (по гео можно крутить без кода клуба)
+async function findNearestClubByGeo(userLat, userLon) {
+  const clubs = await Club.find({
+    isActive: true,
+    latitude: { $ne: null },
+    longitude: { $ne: null },
+  }).lean();
+  const lat = Number(userLat);
+  const lng = Number(userLon);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  let nearest = null;
+  let minDist = 201;
+  for (const c of clubs) {
+    const d = distanceMeters(c.latitude, c.longitude, lat, lng);
+    if (d <= 200 && d < minDist) {
+      minDist = d;
+      nearest = c;
+    }
+  }
+  return nearest ? await Club.findById(nearest._id) : null;
+}
+
 // @desc    Прокрутить рулетку (по токену игрока)
 // @route   POST /api/players/spin
 // @access  Private
 const spin = async (req, res) => {
   try {
     const { clubId: clubParam, latitude, longitude } = req.body;
-    if (!clubParam) {
-      return res.status(400).json({ message: 'ID клуба обязателен' });
+    let club = null;
+    if (clubParam) {
+      club = await resolveClub(clubParam);
+      if (!club || !club.isActive) {
+        return res.status(404).json({ message: 'Клуб не найден или неактивен' });
+      }
+      const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
+      if (geoErr) return geoErr;
+    } else {
+      if (latitude == null || longitude == null) {
+        return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация) или clubId' });
+      }
+      club = await findNearestClubByGeo(latitude, longitude);
+      if (!club) {
+        return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+      }
     }
-    const club = await resolveClub(clubParam);
-    if (!club || !club.isActive) {
-      return res.status(404).json({ message: 'Клуб не найден или неактивен' });
-    }
-    const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
-    if (geoErr) return geoErr;
     const user = await User.findById(req.user._id);
     return doSpin(user, club, req, res);
   } catch (error) {
@@ -333,24 +370,32 @@ const spin = async (req, res) => {
   }
 };
 
-// @desc    Прокрутить рулетку по телефону (без токена)
+// @desc    Прокрутить рулетку по телефону (без токена). Клуб можно не передавать — определится по геолокации (в радиусе 200 м).
 // @route   POST /api/players/spin-by-phone
 // @access  Public
 const spinByPhone = async (req, res) => {
   try {
     const { clubId: clubParam, phone, latitude, longitude } = req.body;
-    if (!clubParam) {
-      return res.status(400).json({ message: 'ID клуба обязателен (или 6-значный код)' });
-    }
     if (!phone) {
       return res.status(400).json({ message: 'Телефон обязателен' });
     }
-    const club = await resolveClub(clubParam);
-    if (!club || !club.isActive) {
-      return res.status(404).json({ message: 'Клуб не найден или неактивен' });
+    let club = null;
+    if (clubParam) {
+      club = await resolveClub(clubParam);
+      if (!club || !club.isActive) {
+        return res.status(404).json({ message: 'Клуб не найден или неактивен' });
+      }
+      const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
+      if (geoErr) return geoErr;
+    } else {
+      if (latitude == null || longitude == null) {
+        return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация)' });
+      }
+      club = await findNearestClubByGeo(latitude, longitude);
+      if (!club) {
+        return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+      }
     }
-    const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
-    if (geoErr) return geoErr;
     const normalized = String(phone).replace(/\D/g, '').replace(/^8/, '7');
     const user = await User.findOne({
       $or: [{ phone: normalized }, { phone: '+' + normalized }],

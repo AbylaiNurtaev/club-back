@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   registerClub,
   getMyClub,
+  updateMyClubTheme,
   getClubPlayers,
   getPlayersStats,
   getPrizeClaims,
@@ -16,6 +17,7 @@ const { protect, authorize } = require('../middleware/auth');
 
 // Защищенные роуты для клубов
 router.get('/me', protect, authorize('club', 'admin'), getMyClub);
+router.patch('/me', protect, authorize('club', 'admin'), updateMyClubTheme);
 router.get('/players', protect, authorize('club', 'admin'), getClubPlayers);
 router.get('/players/stats', protect, authorize('club', 'admin'), getPlayersStats);
 router.get('/prize-claims', protect, authorize('club', 'admin'), getPrizeClaims);

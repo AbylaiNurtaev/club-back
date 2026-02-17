@@ -53,6 +53,12 @@ const clubSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  /** Палитра клуба для фронта */
+  theme: {
+    primary: { type: String, trim: true },
+    primaryDark: { type: String, trim: true },
+    accent: { type: String, trim: true },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

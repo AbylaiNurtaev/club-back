@@ -44,6 +44,7 @@ const login = async (req, res) => {
     const response = {
       _id: user._id,
       phone: user.phone,
+      name: user.name,
       role: user.role,
       token: generateToken(user._id),
     };
@@ -73,10 +74,13 @@ const login = async (req, res) => {
 // @access  Public
 const register = async (req, res) => {
   try {
-    const { phone, code } = req.body;
+    const { phone, code, name } = req.body;
 
     if (!phone || !code) {
       return res.status(400).json({ message: 'Телефон и код обязательны' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'Имя обязательно' });
     }
 
     // Проверка кода (пока всегда 0000)
@@ -93,6 +97,7 @@ const register = async (req, res) => {
     // Создание пользователя
     const user = await User.create({
       phone,
+      name: name.trim(),
       password: 'default',
       role: 'player',
       balance: 15, // Бонус за регистрацию
@@ -109,6 +114,7 @@ const register = async (req, res) => {
     res.status(201).json({
       _id: user._id,
       phone: user.phone,
+      name: user.name,
       balance: user.balance,
       role: user.role,
       token: generateToken(user._id),
