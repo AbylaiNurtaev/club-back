@@ -30,6 +30,10 @@ AWS_ACCESS_KEY=your-aws-access-key
 AWS_SECRET_KEY=your-aws-secret-key
 AWS_BUCKET_NAME=your-bucket-name
 AWS_S3_REGION=your-region
+# Реферальная система (Telegram-бот)
+TELEGRAM_BOT_USERNAME=your_bot_username
+REFERRAL_POINTS=50
+REFERRAL_MAX_PER_MONTH=20
 ```
 
 3. Запустите сервер:

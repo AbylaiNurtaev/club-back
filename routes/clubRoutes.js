@@ -4,6 +4,7 @@ const {
   registerClub,
   getMyClub,
   updateMyClubTheme,
+  uploadQrBackground,
   getClubPlayers,
   getPlayersStats,
   getPrizeClaims,
@@ -13,12 +14,14 @@ const {
   getSpinsToday,
 } = require('../controllers/clubController');
 const { protect, authorize } = require('../middleware/auth');
+const { uploadQrBackground: multerQrBg, uploadQrBackgroundToS3 } = require('../utils/s3Upload');
 
 // Публичные роуты (удалены, используйте /api/auth/login)
 
 // Защищенные роуты для клубов
 router.get('/me', protect, authorize('club', 'admin'), getMyClub);
 router.patch('/me', protect, authorize('club', 'admin'), updateMyClubTheme);
+router.post('/me/qr-background', protect, authorize('club', 'admin'), multerQrBg.single('file'), uploadQrBackgroundToS3, uploadQrBackground);
 router.get('/players', protect, authorize('club', 'admin'), getClubPlayers);
 router.get('/players/stats', protect, authorize('club', 'admin'), getPlayersStats);
 router.get('/prize-claims', protect, authorize('club', 'admin'), getPrizeClaims);

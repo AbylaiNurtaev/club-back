@@ -48,6 +48,12 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  /** Кто пригласил (реферер). Один раз, не перезаписывается. */
+  referrerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

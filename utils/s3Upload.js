@@ -35,6 +35,42 @@ const upload = multer({
   },
 });
 
+// Multer для фона страницы QR: PNG, GIF, MP4, WebM, макс. 10 МБ
+const ALLOWED_QR_BG_EXT = /\.(png|gif|mp4|webm)$/i;
+const ALLOWED_QR_BG_MIMES = ['image/png', 'image/gif', 'video/mp4', 'video/webm'];
+
+const uploadQrBackground = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: function (req, file, cb) {
+    const extOk = ALLOWED_QR_BG_EXT.test(path.extname(file.originalname));
+    const mimeOk = ALLOWED_QR_BG_MIMES.includes(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(new Error('Разрешены только PNG, GIF, MP4, WebM (макс. 10 МБ)'));
+  },
+});
+
+// Middleware: загрузка файла фона QR в S3 (ключ qr-backgrounds/uuid.ext)
+const uploadQrBackgroundToS3 = async (req, res, next) => {
+  if (!req.file) return next();
+  try {
+    const ext = path.extname(req.file.originalname);
+    const filename = `qr-backgrounds/${uuidv4()}${ext}`;
+    const command = new PutObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: filename,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+    });
+    await s3Client.send(command);
+    req.file.location = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_S3_REGION}.amazonaws.com/${filename}`;
+    next();
+  } catch (error) {
+    console.error('Ошибка при загрузке фона QR в S3:', error);
+    return res.status(500).json({ message: 'Ошибка при загрузке файла' });
+  }
+};
+
 // Middleware для загрузки в S3
 const uploadToS3 = async (req, res, next) => {
   if (!req.file) {
@@ -96,6 +132,8 @@ const getS3Url = (key) => {
 module.exports = {
   upload,
   uploadToS3,
+  uploadQrBackground,
+  uploadQrBackgroundToS3,
   deleteFromS3,
   getS3Url,
   s3Client,

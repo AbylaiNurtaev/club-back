@@ -5,6 +5,7 @@ const PrizeClaim = require('../models/PrizeClaim');
 const Transaction = require('../models/Transaction');
 const generateToken = require('../utils/generateToken');
 const QRCode = require('qrcode');
+const { deleteFromS3 } = require('../utils/s3Upload');
 
 // @desc    Регистрация клуба (только админ)
 // @route   POST /api/clubs/register
@@ -131,6 +132,15 @@ const getMyClub = async (req, res) => {
   }
 };
 
+// Ключи темы страницы QR (для валидации и мержа)
+const QR_PAGE_THEME_KEYS = [
+  'pageBg', 'spinContainerBg', 'spinnerLabel', 'spinnerValue', 'pointer', 'trackBg',
+  'cardBg', 'cardBorder', 'cardText', 'cardPlaceholderBg', 'selectedCardBorder',
+  'winsChatBg', 'winsChatText', 'fullscreenBtnBg', 'fullscreenBtnText', 'fullscreenBtnBorder',
+  'resultOverlayBg', 'resultContentBg', 'resultTitle', 'resultPrizeText',
+  'loadingText', 'retryBtnBg', 'retryBtnText',
+];
+
 // @desc    Обновить тему текущего клуба (PATCH /clubs/me)
 // @route   PATCH /api/clubs/me
 // @access  Private/Club
@@ -140,16 +150,69 @@ const updateMyClubTheme = async (req, res) => {
     if (!club) {
       return res.status(404).json({ message: 'Клуб не найден' });
     }
-    const { theme } = req.body;
+    const { theme, qrPageTheme } = req.body;
+
     if (theme !== undefined && theme !== null) {
       club.theme = {
         primary: theme.primary != null ? String(theme.primary).trim() : undefined,
         primaryDark: theme.primaryDark != null ? String(theme.primaryDark).trim() : undefined,
         accent: theme.accent != null ? String(theme.accent).trim() : undefined,
       };
-      await club.save();
     }
+
+    if (qrPageTheme !== undefined && qrPageTheme !== null && typeof qrPageTheme === 'object') {
+      club.qrPageTheme = club.qrPageTheme || {};
+      for (const key of QR_PAGE_THEME_KEYS) {
+        if (qrPageTheme[key] != null) {
+          club.qrPageTheme[key] = String(qrPageTheme[key]).trim();
+        }
+      }
+    }
+
+    if (req.body.qrPageBackground !== undefined) {
+      if (req.body.qrPageBackground === null) {
+        if (club.qrPageBackground && club.qrPageBackground.url) {
+          try { await deleteFromS3(club.qrPageBackground.url); } catch (e) { /* ignore */ }
+        }
+        club.qrPageBackground = undefined;
+      } else if (req.body.qrPageBackground && typeof req.body.qrPageBackground === 'object') {
+        const { url, opacity } = req.body.qrPageBackground;
+        if (url === '' || url === null || url === undefined) {
+          if (club.qrPageBackground && club.qrPageBackground.url) {
+            try { await deleteFromS3(club.qrPageBackground.url); } catch (e) { /* ignore */ }
+          }
+          club.qrPageBackground = undefined;
+        } else {
+          const newUrl = String(url).trim();
+          if (club.qrPageBackground && club.qrPageBackground.url && club.qrPageBackground.url !== newUrl) {
+            try { await deleteFromS3(club.qrPageBackground.url); } catch (e) { /* ignore */ }
+          }
+          club.qrPageBackground = club.qrPageBackground || {};
+          club.qrPageBackground.url = newUrl;
+          if (opacity != null && !Number.isNaN(Number(opacity))) {
+            club.qrPageBackground.opacity = Math.max(0, Math.min(1, Number(opacity)));
+          }
+        }
+      }
+    }
+
+    await club.save();
     res.json(club);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Загрузить фон страницы QR (изображение/видео в S3)
+// @route   POST /api/clubs/me/qr-background
+// @access  Private/Club
+// Body: multipart/form-data, поле "file" — PNG, GIF, MP4, WebM, макс. 10 МБ
+const uploadQrBackground = async (req, res) => {
+  try {
+    if (!req.file || !req.file.location) {
+      return res.status(400).json({ message: 'Отправьте файл в поле file (PNG, GIF, MP4 или WebM, макс. 10 МБ)' });
+    }
+    res.status(200).json({ url: req.file.location });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -437,12 +500,13 @@ module.exports = {
   registerClub,
   getMyClub,
   updateMyClubTheme,
+  uploadQrBackground,
   getClubPlayers,
   getPlayersStats,
   getPrizeClaims,
   confirmPrizeClaim,
   manageClubTime,
   getReports,
-   getSpinsToday,
+  getSpinsToday,
   loginClub,
 };

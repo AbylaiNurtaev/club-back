@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Club = require('../models/Club');
 const Transaction = require('../models/Transaction');
 const generateToken = require('../utils/generateToken');
+const { attachReferrer } = require('../utils/referralService');
 
 // @desc    Единый вход для всех ролей
 // @route   POST /api/auth/login
@@ -21,6 +22,7 @@ const login = async (req, res) => {
 
     // Ищем пользователя
     let user = await User.findOne({ phone });
+    const refPayload = req.body.ref;
 
     if (!user) {
       // Если пользователь не найден, создаем игрока
@@ -38,6 +40,9 @@ const login = async (req, res) => {
         amount: 15,
         description: 'Бонус за регистрацию',
       });
+
+      // Реферал: привязать пригласившего (self-referral и один реферер — внутри attachReferrer)
+      if (refPayload) await attachReferrer(user, refPayload);
     }
 
     // Проверка бана
@@ -91,9 +96,10 @@ const login = async (req, res) => {
 // @desc    Регистрация игрока (опционально, можно использовать login)
 // @route   POST /api/auth/register
 // @access  Public
+// Body: phone, code, name, ref? — ref = payload из Telegram (например ref_<userId>)
 const register = async (req, res) => {
   try {
-    const { phone, code, name } = req.body;
+    const { phone, code, name, ref: refPayload } = req.body;
 
     if (!phone || !code) {
       return res.status(400).json({ message: 'Телефон и код обязательны' });
@@ -129,6 +135,9 @@ const register = async (req, res) => {
       amount: 15,
       description: 'Бонус за регистрацию',
     });
+
+    // Реферал: привязать пригласившего
+    if (refPayload) await attachReferrer(user, refPayload);
 
     res.status(201).json({
       _id: user._id,

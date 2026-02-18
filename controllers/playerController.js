@@ -9,13 +9,15 @@ const generateToken = require('../utils/generateToken');
 const { spinRoulette } = require('../utils/roulette');
 const { addRecentWin, getRecentWins } = require('../utils/recentWins');
 const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M, distanceMeters } = require('../utils/geo');
+const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, REFERRAL_POINTS } = require('../utils/referralService');
 
 // @desc    Регистрация игрока
 // @route   POST /api/players/register
 // @access  Public
+// Body: phone, code, name, ref? — ref = payload из Telegram (например ref_<userId>)
 const registerPlayer = async (req, res) => {
   try {
-    const { phone, code, name } = req.body;
+    const { phone, code, name, ref: refPayload } = req.body;
 
     if (!phone || !code) {
       return res.status(400).json({ message: 'Телефон и код обязательны' });
@@ -51,6 +53,9 @@ const registerPlayer = async (req, res) => {
       amount: 15,
       description: 'Бонус за регистрацию',
     });
+
+    // Реферал: привязать пригласившего (антифрод: self-referral и один реферер — внутри attachReferrer)
+    if (refPayload) await attachReferrer(user, refPayload);
 
     res.status(201).json({
       _id: user._id,
@@ -114,7 +119,13 @@ const getMe = async (req, res) => {
       .select('-password')
       .populate('clubId', 'name clubId');
 
-    res.json(user);
+    const data = user.toObject ? user.toObject() : user;
+    if (user.role === 'player') {
+      data.referralCode = getReferralCode(user._id);
+      data.referralLink = getReferralLink(user._id);
+      data.referralPointsPerFriend = REFERRAL_POINTS;
+    }
+    res.json(data);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -311,6 +322,9 @@ async function doSpin(user, club, req, res) {
   if (io) {
     io.to(`club:${club._id}`).emit('spin', { ...spinPayload, recentWins: recentWinsList });
   }
+
+  // Реферал: после первого платного спина — одобрить и начислить баллы рефереру (лимит 20/мес)
+  tryApproveReferral(user._id).catch(() => {});
 
   return res.json({
     spin: spinPayload,
