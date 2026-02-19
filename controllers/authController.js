@@ -20,29 +20,13 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Неверный код' });
     }
 
-    // Ищем пользователя
-    let user = await User.findOne({ phone });
-    const refPayload = req.body.ref;
-
+    // Ищем пользователя. Если не найден — не создаём; бот запустит регистрацию (код друга → имя → register).
+    const user = await User.findOne({ phone });
     if (!user) {
-      // Если пользователь не найден, создаем игрока
-      user = await User.create({
-        phone,
-        password: 'default',
-        role: 'player',
-        balance: 15, // Бонус за регистрацию
+      return res.status(404).json({
+        message: 'Пользователь не найден. Зарегистрируйтесь.',
+        code: 'USER_NOT_FOUND',
       });
-
-      // Создание транзакции для бонуса регистрации
-      await Transaction.create({
-        userId: user._id,
-        type: 'registration_bonus',
-        amount: 15,
-        description: 'Бонус за регистрацию',
-      });
-
-      await ensureUserReferralCode(user);
-      if (refPayload) await attachReferrer(user, refPayload);
     }
 
     // Проверка бана
