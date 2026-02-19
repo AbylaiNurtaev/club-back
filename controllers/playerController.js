@@ -434,12 +434,19 @@ const spin = async (req, res) => {
         if (geoErr) return geoErr;
       }
     } else {
-      if (latitude == null || longitude == null) {
-        return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация) или clubId' });
-      }
-      club = await findNearestClubByGeo(latitude, longitude);
-      if (!club) {
-        return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+      if (isGeoBypassPhone(user?.phone)) {
+        club = await Club.findOne({ isActive: true });
+        if (!club) {
+          return res.status(404).json({ message: 'Нет активных клубов' });
+        }
+      } else {
+        if (latitude == null || longitude == null) {
+          return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация) или clubId' });
+        }
+        club = await findNearestClubByGeo(latitude, longitude);
+        if (!club) {
+          return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+        }
       }
     }
     return doSpin(user, club, req, res);
