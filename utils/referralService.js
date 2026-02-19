@@ -75,10 +75,13 @@ async function tryApproveReferral(referredUserId) {
   referral.pointsAwarded = REFERRAL_POINTS;
   await referral.save();
 
-  const referrer = await User.findById(user.referrerId);
+  // Атомное начисление баллов (защита от гонки при одновременных первых спинах двух приглашённых)
+  const referrer = await User.findByIdAndUpdate(
+    user.referrerId,
+    { $inc: { balance: REFERRAL_POINTS } },
+    { new: true }
+  );
   if (referrer) {
-    referrer.balance = (referrer.balance || 0) + REFERRAL_POINTS;
-    await referrer.save();
     await Transaction.create({
       userId: referrer._id,
       type: 'referral_bonus',
