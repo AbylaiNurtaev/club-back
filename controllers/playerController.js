@@ -11,6 +11,9 @@ const { addRecentWin, getRecentWins } = require('../utils/recentWins');
 const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M, distanceMeters } = require('../utils/geo');
 const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, REFERRAL_POINTS } = require('../utils/referralService');
 
+// Блокировка рулетки по клубу: 7 сек результаты + 15 сек анимация + запас ≈ 23 сек
+const ROULETTE_COOLDOWN_MS = 23 * 1000;
+
 // @desc    Регистрация игрока
 // @route   POST /api/players/register
 // @access  Public
@@ -231,6 +234,19 @@ const getClubByQR = async (req, res) => {
 
 // Общая логика спина (клуб уже найден, юзер уже есть)
 async function doSpin(user, club, req, res) {
+  const lastSpin = await Spin.findOne({ clubId: club._id }).sort({ createdAt: -1 }).lean();
+  if (lastSpin) {
+    const elapsed = Date.now() - new Date(lastSpin.createdAt).getTime();
+    if (elapsed < ROULETTE_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.ceil((ROULETTE_COOLDOWN_MS - elapsed) / 1000);
+      return res.status(429).json({
+        message: 'Рулетка занята, попробуйте позже',
+        code: 'ROULETTE_BUSY',
+        retryAfterSeconds,
+      });
+    }
+  }
+
   const spinCost = 20;
   if (user.balance < spinCost) {
     return res.status(400).json({ message: 'Недостаточно баллов для прокрутки' });
@@ -298,7 +314,8 @@ async function doSpin(user, club, req, res) {
   }
 
   const prizeInfo = await Prize.findById(prize._id).select('name description type value image dropChance slotIndex');
-  const playerIdPayload = (user.name && user.name.trim()) ? { name: user.name.trim() } : undefined;
+  const playerName = (user.name && String(user.name).trim()) ? String(user.name).trim() : '';
+  const playerIdPayload = playerName ? { name: playerName } : undefined;
   const spinPayload = {
     _id: spin._id,
     prize: {
@@ -313,7 +330,8 @@ async function doSpin(user, club, req, res) {
     cost: spinCost,
     createdAt: spin.createdAt,
     playerPhone: user.phone,
-    playerName: user.name,
+    playerName,
+    name: playerName,
     playerId: playerIdPayload,
   };
 
@@ -326,7 +344,9 @@ async function doSpin(user, club, req, res) {
   }
 
   // Реферал: после первого платного спина — одобрить и начислить баллы рефереру (лимит 20/мес)
-  tryApproveReferral(user._id).catch(() => {});
+  tryApproveReferral(user._id).catch((err) => {
+    console.error('[referral] tryApproveReferral failed:', err?.message || err);
+  });
 
   return res.json({
     spin: spinPayload,

@@ -1,7 +1,9 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
 const Transaction = require('../models/Transaction');
+const Spin = require('../models/Spin');
 
 const REFERRAL_POINTS = Number(process.env.REFERRAL_POINTS) || 5;
 const REFERRAL_MAX_PER_MONTH = Number(process.env.REFERRAL_MAX_PER_MONTH) || 20;
@@ -99,22 +101,38 @@ async function attachReferrer(referredUser, refPayload) {
  * Вызвать после успешного платного спина. Если это первый платный спин пользователя
  * и у него есть реферер — одобряем реферал и начисляем баллы (с учётом лимита 20/месяц).
  */
-async function tryApproveReferral(referredUserId) {
-  const user = await User.findById(referredUserId);
-  if (!user || !user.referrerId) return;
+const DEBUG_REFERRAL = process.env.DEBUG_REFERRAL === '1' || process.env.DEBUG_REFERRAL === 'true';
 
-  const paidSpinsCount = await require('../models/Spin').countDocuments({
-    userId: referredUserId,
+async function tryApproveReferral(referredUserId) {
+  const refId = mongoose.Types.ObjectId.isValid(referredUserId) ? new mongoose.Types.ObjectId(referredUserId) : referredUserId;
+  const user = await User.findById(refId).select('referrerId');
+  if (!user) {
+    if (DEBUG_REFERRAL) console.warn('[referral] tryApproveReferral: user not found', referredUserId);
+    return;
+  }
+  if (!user.referrerId) {
+    if (DEBUG_REFERRAL) console.warn('[referral] tryApproveReferral: no referrerId for user', referredUserId);
+    return;
+  }
+
+  const paidSpinsCount = await Spin.countDocuments({
+    userId: refId,
     cost: { $gt: 0 },
   });
-  if (paidSpinsCount !== 1) return; // только за первый платный спин
+  if (paidSpinsCount !== 1) {
+    if (DEBUG_REFERRAL) console.warn('[referral] tryApproveReferral: paidSpinsCount !== 1', { referredUserId, paidSpinsCount });
+    return;
+  }
 
   const referral = await Referral.findOne({
     referrerId: user.referrerId,
-    referredUserId: referredUserId,
+    referredUserId: refId,
     status: 'pending',
   });
-  if (!referral) return;
+  if (!referral) {
+    if (DEBUG_REFERRAL) console.warn('[referral] tryApproveReferral: no pending referral', { referredUserId, referrerId: user.referrerId });
+    return;
+  }
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -123,7 +141,10 @@ async function tryApproveReferral(referredUserId) {
     status: 'approved',
     approvedAt: { $gte: startOfMonth },
   });
-  if (approvedThisMonth >= REFERRAL_MAX_PER_MONTH) return;
+  if (approvedThisMonth >= REFERRAL_MAX_PER_MONTH) {
+    if (DEBUG_REFERRAL) console.warn('[referral] tryApproveReferral: monthly limit reached', { referrerId: user.referrerId, approvedThisMonth });
+    return;
+  }
 
   referral.status = 'approved';
   referral.approvedAt = now;
