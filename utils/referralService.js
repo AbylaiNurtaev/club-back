@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
 const Transaction = require('../models/Transaction');
@@ -5,19 +6,73 @@ const Transaction = require('../models/Transaction');
 const REFERRAL_POINTS = Number(process.env.REFERRAL_POINTS) || 50;
 const REFERRAL_MAX_PER_MONTH = Number(process.env.REFERRAL_MAX_PER_MONTH) || 20;
 
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без 0,O,1,I,L — меньше путаницы
+const CODE_LENGTH = 6;
+
+function generateRandomCode() {
+  let code = '';
+  const bytes = crypto.randomBytes(CODE_LENGTH);
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    code += CODE_CHARS[bytes[i] % CODE_CHARS.length];
+  }
+  return code;
+}
+
 /**
- * Реферальная ссылка: https://t.me/<bot>?start=ref_<userId>
- * payload из Telegram = "ref_<userId>" (24 hex ObjectId).
+ * Создать уникальный 6-значный реферальный код. При коллизии — повторить.
+ */
+async function generateUniqueReferralCode() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateRandomCode();
+    const exists = await User.exists({ referralCode: code });
+    if (!exists) return code;
+  }
+  throw new Error('Не удалось сгенерировать уникальный реферальный код');
+}
+
+/**
+ * Убедиться, что у пользователя есть referralCode; при отсутствии — сгенерировать и сохранить.
+ * Возвращает 6-значный код (строка).
+ */
+async function ensureUserReferralCode(user) {
+  if (user.referralCode) return user.referralCode;
+  const code = await generateUniqueReferralCode();
+  user.referralCode = code;
+  await user.save();
+  return code;
+}
+
+/**
+ * Найти реферера по payload. Поддерживает:
+ * - "ref_ABC123" (6-значный код) или "ref_<24 hex>" (старый userId для обратной совместимости);
+ * - "ABC123" (только код, без префикса).
  * Возвращает User реферера или null.
  */
 async function resolveRefPayload(refPayload) {
   if (!refPayload || typeof refPayload !== 'string') return null;
-  const s = refPayload.trim();
-  if (!s.startsWith('ref_')) return null;
-  const userId = s.slice(4);
-  if (!userId || userId.length !== 24) return null;
-  const user = await User.findById(userId);
-  return user;
+  const s = refPayload.trim().toUpperCase();
+  if (!s) return null;
+
+  let afterRef = null;
+  if (s.startsWith('REF_')) {
+    afterRef = s.slice(4);
+  }
+
+  if (afterRef !== null) {
+    if (afterRef.length === 24 && /^[a-f0-9]+$/i.test(afterRef)) {
+      const user = await User.findById(afterRef);
+      return user;
+    }
+    if (afterRef.length === CODE_LENGTH) {
+      return User.findOne({ referralCode: afterRef });
+    }
+    return null;
+  }
+
+  if (s.length === CODE_LENGTH) {
+    return User.findOne({ referralCode: s });
+  }
+  return null;
 }
 
 /**
@@ -91,14 +146,25 @@ async function tryApproveReferral(referredUserId) {
   }
 }
 
-function getReferralCode(userId) {
-  return `ref_${userId}`;
+/**
+ * Получить 6-значный реферальный код пользователя (при отсутствии — сгенерировать).
+ * @param {Object} user — документ User (с _id и опционально referralCode)
+ */
+async function getReferralCode(user) {
+  const u = user.referralCode ? user : await User.findById(user._id || user);
+  if (!u) return null;
+  return ensureUserReferralCode(u);
 }
 
-function getReferralLink(userId) {
+/**
+ * Получить реферальную ссылку (t.me/bot?start=ref_<код>).
+ */
+async function getReferralLink(user) {
   const bot = process.env.TELEGRAM_BOT_USERNAME;
   if (!bot) return null;
-  return `https://t.me/${bot.replace(/^@/, '')}?start=ref_${userId}`;
+  const code = await getReferralCode(user);
+  if (!code) return null;
+  return `https://t.me/${bot.replace(/^@/, '')}?start=ref_${code}`;
 }
 
 module.exports = {
@@ -107,6 +173,7 @@ module.exports = {
   resolveRefPayload,
   attachReferrer,
   tryApproveReferral,
+  ensureUserReferralCode,
   getReferralCode,
   getReferralLink,
 };

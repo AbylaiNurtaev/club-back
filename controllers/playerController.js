@@ -121,8 +121,8 @@ const getMe = async (req, res) => {
 
     const data = user.toObject ? user.toObject() : user;
     if (user.role === 'player') {
-      data.referralCode = getReferralCode(user._id);
-      data.referralLink = getReferralLink(user._id);
+      data.referralCode = await getReferralCode(user);
+      data.referralLink = await getReferralLink(user);
       data.referralPointsPerFriend = REFERRAL_POINTS;
     }
     res.json(data);

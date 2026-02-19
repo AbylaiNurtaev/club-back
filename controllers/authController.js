@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Club = require('../models/Club');
 const Transaction = require('../models/Transaction');
 const generateToken = require('../utils/generateToken');
-const { attachReferrer } = require('../utils/referralService');
+const { attachReferrer, ensureUserReferralCode } = require('../utils/referralService');
 
 // @desc    Единый вход для всех ролей
 // @route   POST /api/auth/login
@@ -41,7 +41,7 @@ const login = async (req, res) => {
         description: 'Бонус за регистрацию',
       });
 
-      // Реферал: привязать пригласившего (self-referral и один реферер — внутри attachReferrer)
+      await ensureUserReferralCode(user);
       if (refPayload) await attachReferrer(user, refPayload);
     }
 
@@ -136,7 +136,7 @@ const register = async (req, res) => {
       description: 'Бонус за регистрацию',
     });
 
-    // Реферал: привязать пригласившего
+    await ensureUserReferralCode(user);
     if (refPayload) await attachReferrer(user, refPayload);
 
     res.status(201).json({

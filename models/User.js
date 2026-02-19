@@ -54,6 +54,16 @@ const userSchema = new mongoose.Schema({
     ref: 'User',
     default: null,
   },
+  /** Уникальный 6-значный реферальный код (делится с друзьями). */
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    minlength: 6,
+    maxlength: 6,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
