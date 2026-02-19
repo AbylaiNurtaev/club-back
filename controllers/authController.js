@@ -4,7 +4,7 @@ const Transaction = require('../models/Transaction');
 const generateToken = require('../utils/generateToken');
 const { attachReferrer, ensureUserReferralCode } = require('../utils/referralService');
 
-// @desc    Единый вход для всех ролей
+// @desc    Вход. Тело только { phone, code }. Если пользователь есть — 200 + токен. Если нет — 404 + USER_NOT_FOUND (не создаём пользователя).
 // @route   POST /api/auth/login
 // @access  Public
 const login = async (req, res) => {
@@ -77,10 +77,9 @@ const login = async (req, res) => {
   }
 };
 
-// @desc    Регистрация игрока (опционально, можно использовать login)
+// @desc    Регистрация. Создание пользователя только здесь. Тело: { phone, code, name, ref? }. После проверки кода создаём пользователя, при необходимости привязываем ref, возвращаем токен и данные.
 // @route   POST /api/auth/register
 // @access  Public
-// Body: phone, code, name, ref? — ref = payload из Telegram (например ref_<userId>)
 const register = async (req, res) => {
   try {
     const { phone, code, name, ref: refPayload } = req.body;
