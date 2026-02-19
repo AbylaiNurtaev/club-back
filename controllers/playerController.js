@@ -335,6 +335,8 @@ async function doSpin(user, club, req, res) {
       value: prizeInfo.value,
       image: prizeInfo.image,
       slotIndex: prizeInfo.slotIndex,
+      dropChance: prizeInfo.dropChance,
+      percentage: prizeInfo.dropChance,
     },
     cost: spinCost,
     createdAt: spin.createdAt,
@@ -511,7 +513,7 @@ const spinByPhone = async (req, res) => {
 const getPrizes = async (req, res) => {
   try {
     const prizeClaims = await PrizeClaim.find({ userId: req.user._id })
-      .populate('prizeId', 'name description type value image')
+      .populate('prizeId', 'name description type value image dropChance')
       .populate('clubId', 'name')
       .populate('spinId', 'createdAt')
       .sort({ createdAt: -1 });
@@ -529,9 +531,11 @@ const getRoulettePrizes = async (req, res) => {
   try {
     const prizes = await Prize.find({ isActive: true })
       .select('name description type value image dropChance slotIndex')
-      .sort({ slotIndex: 1 });
+      .sort({ slotIndex: 1 })
+      .lean();
 
-    res.json(prizes);
+    const withPercentage = prizes.map((p) => ({ ...p, percentage: p.dropChance }));
+    res.json(withPercentage);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
