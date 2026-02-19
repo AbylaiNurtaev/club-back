@@ -3,7 +3,7 @@ const User = require('../models/User');
 const Referral = require('../models/Referral');
 const Transaction = require('../models/Transaction');
 
-const REFERRAL_POINTS = Number(process.env.REFERRAL_POINTS) || 50;
+const REFERRAL_POINTS = Number(process.env.REFERRAL_POINTS) || 5;
 const REFERRAL_MAX_PER_MONTH = Number(process.env.REFERRAL_MAX_PER_MONTH) || 20;
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без 0,O,1,I,L — меньше путаницы

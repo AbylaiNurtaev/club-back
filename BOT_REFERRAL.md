@@ -39,13 +39,13 @@
   "balance": 100,
   "referralCode": "K7MN2P",
   "referralLink": "https://t.me/your_bot?start=ref_K7MN2P",
-  "referralPointsPerFriend": 50
+  "referralPointsPerFriend": 5
 }
 ```
 
 - **`referralCode`** — **6-значный код** пользователя (например `K7MN2P`). Его можно показывать отдельно: «Твой код для друзей: **K7MN2P**» — друг может ввести код вручную, без перехода по ссылке.
 - **`referralLink`** — готовая ссылка. Если в `.env` не задан `TELEGRAM_BOT_USERNAME`, поле будет `null` — тогда собирай сам: `https://t.me/ИМЯ_ТВОЕГО_БОТА?start=ref_` + `referralCode`.
-- **`referralPointsPerFriend`** — число X из фразы «получишь X баллов» (обычно 50).
+- **`referralPointsPerFriend`** — число X из фразы «получишь X баллов» (по умолчанию 5).
 
 **Что показать пользователю:**
 
