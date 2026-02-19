@@ -235,7 +235,7 @@ const getClubPlayers = async (req, res) => {
     }
 
     const players = await User.find({ _id: { $in: spinUserIds }, role: 'player' })
-      .select('phone balance createdAt')
+      .select('name phone balance createdAt')
       .sort({ createdAt: -1 });
 
     res.json(players);
@@ -289,7 +289,7 @@ const getPrizeClaims = async (req, res) => {
 
     const [claims, total] = await Promise.all([
       PrizeClaim.find({ clubId: club._id })
-        .populate('userId', 'phone')
+        .populate('userId', 'name phone')
         .populate('prizeId', 'name description type value')
         .populate('spinId', 'createdAt')
         .sort({ createdAt: -1 })

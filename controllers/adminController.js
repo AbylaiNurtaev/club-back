@@ -741,13 +741,13 @@ const getAnalytics = async (req, res) => {
       { $project: { prizeName: '$prize.name', count: 1 } },
     ]);
 
-    // Статистика по клубам
+    // Статистика по клубам (кол-во спинов и кол-во уникальных игроков)
     const clubStats = await Spin.aggregate([
       { $match: query },
-      { $group: { _id: '$clubId', count: { $sum: 1 } } },
+      { $group: { _id: '$clubId', count: { $sum: 1 }, userIds: { $addToSet: '$userId' } } },
       { $lookup: { from: 'clubs', localField: '_id', foreignField: '_id', as: 'club' } },
       { $unwind: '$club' },
-      { $project: { clubName: '$club.name', count: 1 } },
+      { $project: { clubName: '$club.name', count: 1, playerCount: { $size: '$userIds' } } },
     ]);
 
     res.json({

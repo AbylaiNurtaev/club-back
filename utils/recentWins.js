@@ -16,10 +16,21 @@ function maskPhone(phone) {
   return `+7 ${first} *** ${last}`;
 }
 
-function addRecentWin(phone, prizeName) {
+/**
+ * @param {string} phone - телефон игрока
+ * @param {string} prizeName - название приза
+ * @param {string} [playerName] - имя игрока (для playerId.name; фронт использует в winDisplayName)
+ */
+function addRecentWin(phone, prizeName, playerName) {
   const masked = maskPhone(phone);
   const text = `${masked} выиграл ${prizeName || 'Приз'}`;
-  recentWins.push({ maskedPhone: masked, prizeName: prizeName || 'Приз', text });
+  const playerId = (playerName && playerName.trim()) ? { name: playerName.trim() } : undefined;
+  recentWins.push({
+    maskedPhone: masked,
+    prizeName: prizeName || 'Приз',
+    text,
+    ...(playerId && { playerId }),
+  });
   if (recentWins.length > MAX_RECENT) recentWins.shift();
   return recentWins.slice();
 }
