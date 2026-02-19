@@ -25,7 +25,12 @@ const {
   deleteCompanyLogo,
 } = require('../controllers/adminController');
 const { protect, authorize } = require('../middleware/auth');
-const { upload, uploadToS3 } = require('../utils/s3Upload');
+const { upload, uploadToS3, uploadPrizeFilesToS3 } = require('../utils/s3Upload');
+
+const prizeFiles = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'backgroundImage', maxCount: 1 },
+]);
 
 // Публичные роуты (удалены, используйте /api/auth/login)
 
@@ -47,10 +52,10 @@ router.delete('/users/:id', deleteUser);
 router.post('/users/:id/ban', banUser);
 router.post('/users/:id/unban', unbanUser);
 
-// Управление призами
-router.post('/prizes', upload.single('image'), uploadToS3, createPrize);
+// Управление призами (image + backgroundImage — фон картинкой)
+router.post('/prizes', prizeFiles, uploadPrizeFilesToS3, createPrize);
 router.get('/prizes', getPrizes);
-router.put('/prizes/:id', upload.single('image'), uploadToS3, updatePrize);
+router.put('/prizes/:id', prizeFiles, uploadPrizeFilesToS3, updatePrize);
 router.delete('/prizes/:id', deletePrize);
 
 // Аналитика и управление

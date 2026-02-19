@@ -322,7 +322,7 @@ async function doSpin(user, club, req, res) {
     await prize.save();
   }
 
-  const prizeInfo = await Prize.findById(prize._id).select('name description type value image dropChance slotIndex');
+  const prizeInfo = await Prize.findById(prize._id).select('name description type value image backgroundImage dropChance slotIndex');
   const playerName = (user.name && String(user.name).trim()) ? String(user.name).trim() : '';
   const playerIdPayload = playerName ? { name: playerName } : undefined;
   const spinPayload = {
@@ -334,6 +334,7 @@ async function doSpin(user, club, req, res) {
       type: prizeInfo.type,
       value: prizeInfo.value,
       image: prizeInfo.image,
+      backgroundImage: prizeInfo.backgroundImage,
       slotIndex: prizeInfo.slotIndex,
       dropChance: prizeInfo.dropChance,
       percentage: prizeInfo.dropChance,
@@ -513,7 +514,7 @@ const spinByPhone = async (req, res) => {
 const getPrizes = async (req, res) => {
   try {
     const prizeClaims = await PrizeClaim.find({ userId: req.user._id })
-      .populate('prizeId', 'name description type value image dropChance')
+      .populate('prizeId', 'name description type value image backgroundImage dropChance')
       .populate('clubId', 'name')
       .populate('spinId', 'createdAt')
       .sort({ createdAt: -1 });
@@ -530,7 +531,7 @@ const getPrizes = async (req, res) => {
 const getRoulettePrizes = async (req, res) => {
   try {
     const prizes = await Prize.find({ isActive: true })
-      .select('name description type value image dropChance slotIndex')
+      .select('name description type value image backgroundImage dropChance slotIndex')
       .sort({ slotIndex: 1 })
       .lean();
 

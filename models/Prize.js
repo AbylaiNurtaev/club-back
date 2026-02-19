@@ -20,6 +20,9 @@ const prizeSchema = new mongoose.Schema({
   image: {
     type: String, // URL изображения
   },
+  backgroundImage: {
+    type: String, // URL фона картинкой (задаётся в админке)
+  },
   dropChance: {
     type: Number, // Процент выпадения (0-100)
     required: true,

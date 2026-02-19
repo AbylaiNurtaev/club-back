@@ -453,8 +453,8 @@ const createPrize = async (req, res) => {
       return res.status(400).json({ message: 'Слот уже занят другим призом' });
     }
 
-    // Получаем URL загруженного изображения
-    const image = req.file ? req.file.location : null;
+    const image = req.files?.image?.[0]?.location ?? req.file?.location ?? null;
+    const backgroundImage = req.files?.backgroundImage?.[0]?.location ?? null;
 
     const prize = await Prize.create({
       name,
@@ -462,6 +462,7 @@ const createPrize = async (req, res) => {
       type,
       value,
       image,
+      backgroundImage,
       dropChance,
       slotIndex,
       totalQuantity: totalQuantity || null,
@@ -470,10 +471,9 @@ const createPrize = async (req, res) => {
 
     res.status(201).json(prize);
   } catch (error) {
-    // Если была загружена картинка, но произошла ошибка, удаляем её
-    if (req.file && req.file.location) {
-      await deleteFromS3(req.file.location);
-    }
+    if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
+    if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
+    if (req.file?.location) await deleteFromS3(req.file.location);
     res.status(500).json({ message: error.message });
   }
 };
@@ -496,36 +496,38 @@ const getPrizes = async (req, res) => {
 // @access  Private/Admin
 const updatePrize = async (req, res) => {
   try {
-    const { name, description, type, value, dropChance, slotIndex, isActive, totalQuantity } = req.body;
+    const { name, description, type, value, dropChance, slotIndex, isActive, totalQuantity, removeBackgroundImage } = req.body;
 
     const prize = await Prize.findById(req.params.id);
     if (!prize) {
-      // Если была загружена новая картинка, удаляем её
-      if (req.file && req.file.location) {
-        await deleteFromS3(req.file.location);
-      }
+      if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
+      if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
       return res.status(404).json({ message: 'Приз не найден' });
     }
 
     if (slotIndex !== undefined && slotIndex !== prize.slotIndex) {
-      // Проверка, что новый слот не занят
       const existingPrize = await Prize.findOne({ slotIndex, isActive: true, _id: { $ne: prize._id } });
       if (existingPrize) {
-        // Если была загружена новая картинка, удаляем её
-        if (req.file && req.file.location) {
-          await deleteFromS3(req.file.location);
-        }
+        if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
+        if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
         return res.status(400).json({ message: 'Слот уже занят другим призом' });
       }
     }
 
-    // Если загружено новое изображение
-    if (req.file && req.file.location) {
-      // Удаляем старое изображение из S3
-      if (prize.image) {
-        await deleteFromS3(prize.image);
+    if (req.files?.image?.[0]?.location) {
+      if (prize.image) await deleteFromS3(prize.image);
+      prize.image = req.files.image[0].location;
+    }
+
+    if (req.files?.backgroundImage?.[0]?.location) {
+      if (prize.backgroundImage) await deleteFromS3(prize.backgroundImage);
+      prize.backgroundImage = req.files.backgroundImage[0].location;
+    }
+    if (removeBackgroundImage === true || removeBackgroundImage === 'true') {
+      if (prize.backgroundImage) {
+        await deleteFromS3(prize.backgroundImage);
+        prize.backgroundImage = undefined;
       }
-      prize.image = req.file.location;
     }
 
     if (name) prize.name = name;
@@ -547,10 +549,8 @@ const updatePrize = async (req, res) => {
 
     res.json(prize);
   } catch (error) {
-    // Если была загружена картинка, но произошла ошибка, удаляем её
-    if (req.file && req.file.location) {
-      await deleteFromS3(req.file.location);
-    }
+    if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
+    if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
     res.status(500).json({ message: error.message });
   }
 };
@@ -565,10 +565,8 @@ const deletePrize = async (req, res) => {
       return res.status(404).json({ message: 'Приз не найден' });
     }
 
-    // Удаляем изображение из S3
-    if (prize.image) {
-      await deleteFromS3(prize.image);
-    }
+    if (prize.image) await deleteFromS3(prize.image);
+    if (prize.backgroundImage) await deleteFromS3(prize.backgroundImage);
 
     await prize.deleteOne();
 

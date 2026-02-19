@@ -15,23 +15,20 @@ const s3Client = new S3Client({
 // Кастомное хранилище для multer с AWS SDK v3
 const storage = multer.memoryStorage();
 
-// Настройка multer
+// Форматы изображений: JPG, PNG, GIF, WebP
+const ALLOWED_IMAGE_EXT = /\.(jpe?g|png|gif|webp)$/i;
+const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+
 const upload = multer({
   storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: function (req, file, cb) {
-    // Разрешаем только изображения
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Разрешены только изображения (jpeg, jpg, png, gif, webp)'));
-    }
+    const extOk = ALLOWED_IMAGE_EXT.test(path.extname(file.originalname));
+    const mimeOk = ALLOWED_IMAGE_MIMES.includes(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(new Error('Разрешены только JPG, PNG, GIF, WebP'));
   },
 });
 
@@ -71,7 +68,7 @@ const uploadQrBackgroundToS3 = async (req, res, next) => {
   }
 };
 
-// Middleware для загрузки в S3
+// Middleware для загрузки в S3 (один файл в req.file)
 const uploadToS3 = async (req, res, next) => {
   if (!req.file) {
     return next();
@@ -86,18 +83,49 @@ const uploadToS3 = async (req, res, next) => {
       Key: filename,
       Body: req.file.buffer,
       ContentType: req.file.mimetype,
-      // ACL убран, так как bucket не поддерживает ACL
-      // Публичный доступ должен быть настроен через bucket policy
     });
 
     await s3Client.send(command);
 
-    // Сохраняем URL файла в req.file.location
     req.file.location = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_S3_REGION}.amazonaws.com/${filename}`;
-    
+
     next();
   } catch (error) {
     console.error('Ошибка при загрузке в S3:', error);
+    return res.status(500).json({ message: 'Ошибка при загрузке изображения' });
+  }
+};
+
+// Загрузка нескольких файлов приза (image, backgroundImage) в S3 — для админки призов
+const uploadPrizeFilesToS3 = async (req, res, next) => {
+  if (!req.files || Object.keys(req.files).length === 0) {
+    return next();
+  }
+
+  const baseUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_S3_REGION}.amazonaws.com`;
+
+  try {
+    for (const fieldName of ['image', 'backgroundImage']) {
+      const file = req.files[fieldName]?.[0];
+      if (!file || !file.buffer) continue;
+
+      const ext = path.extname(file.originalname);
+      const filename = `prizes/${uuidv4()}${ext}`;
+
+      const command = new PutObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: filename,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      });
+
+      await s3Client.send(command);
+      file.location = `${baseUrl}/${filename}`;
+    }
+
+    next();
+  } catch (error) {
+    console.error('Ошибка при загрузке файлов приза в S3:', error);
     return res.status(500).json({ message: 'Ошибка при загрузке изображения' });
   }
 };
@@ -132,6 +160,7 @@ const getS3Url = (key) => {
 module.exports = {
   upload,
   uploadToS3,
+  uploadPrizeFilesToS3,
   uploadQrBackground,
   uploadQrBackgroundToS3,
   deleteFromS3,
