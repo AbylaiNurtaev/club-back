@@ -14,6 +14,16 @@ const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, RE
 // Блокировка рулетки по клубу: 7 сек результаты + 15 сек анимация + запас ≈ 23 сек
 const ROULETTE_COOLDOWN_MS = 23 * 1000;
 
+// Тестовый bypass геолокации: для номера +76666666666 можно крутить рулетку без проверки нахождения в клубе.
+// Включить: SPIN_GEO_BYPASS_ENABLED=true в .env. Отключить — убрать или поставить false.
+const SPIN_GEO_BYPASS_ENABLED = process.env.SPIN_GEO_BYPASS_ENABLED === 'true';
+const GEO_BYPASS_PHONE_NORMALIZED = '76666666666';
+function isGeoBypassPhone(phone) {
+  if (!SPIN_GEO_BYPASS_ENABLED || !phone) return false;
+  const n = String(phone).replace(/\D/g, '').replace(/^8/, '7');
+  return n === GEO_BYPASS_PHONE_NORMALIZED;
+}
+
 // @desc    Регистрация игрока
 // @route   POST /api/players/register
 // @access  Public
@@ -411,6 +421,7 @@ async function findNearestClubByGeo(userLat, userLon) {
 // @access  Private
 const spin = async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
     const { clubId: clubParam, latitude, longitude } = req.body;
     let club = null;
     if (clubParam) {
@@ -418,8 +429,10 @@ const spin = async (req, res) => {
       if (!club || !club.isActive) {
         return res.status(404).json({ message: 'Клуб не найден или неактивен' });
       }
-      const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
-      if (geoErr) return geoErr;
+      if (!isGeoBypassPhone(user?.phone)) {
+        const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
+        if (geoErr) return geoErr;
+      }
     } else {
       if (latitude == null || longitude == null) {
         return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация) или clubId' });
@@ -429,7 +442,6 @@ const spin = async (req, res) => {
         return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
       }
     }
-    const user = await User.findById(req.user._id);
     return doSpin(user, club, req, res);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -445,24 +457,34 @@ const spinByPhone = async (req, res) => {
     if (!phone) {
       return res.status(400).json({ message: 'Телефон обязателен' });
     }
+    const normalized = String(phone).replace(/\D/g, '').replace(/^8/, '7');
+    const bypassGeo = isGeoBypassPhone(phone);
     let club = null;
     if (clubParam) {
       club = await resolveClub(clubParam);
       if (!club || !club.isActive) {
         return res.status(404).json({ message: 'Клуб не найден или неактивен' });
       }
-      const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
-      if (geoErr) return geoErr;
-    } else {
-      if (latitude == null || longitude == null) {
-        return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация)' });
+      if (!bypassGeo) {
+        const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
+        if (geoErr) return geoErr;
       }
-      club = await findNearestClubByGeo(latitude, longitude);
-      if (!club) {
-        return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+    } else {
+      if (bypassGeo) {
+        club = await Club.findOne({ isActive: true });
+        if (!club) {
+          return res.status(404).json({ message: 'Нет активных клубов' });
+        }
+      } else {
+        if (latitude == null || longitude == null) {
+          return res.status(400).json({ message: 'Передайте latitude и longitude (геолокация)' });
+        }
+        club = await findNearestClubByGeo(latitude, longitude);
+        if (!club) {
+          return res.status(400).json({ message: 'Вы не в радиусе ни одного клуба (в пределах 200 м)' });
+        }
       }
     }
-    const normalized = String(phone).replace(/\D/g, '').replace(/^8/, '7');
     const user = await User.findOne({
       $or: [{ phone: normalized }, { phone: '+' + normalized }],
     });
