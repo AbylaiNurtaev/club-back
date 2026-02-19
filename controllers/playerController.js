@@ -14,14 +14,13 @@ const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, RE
 // Блокировка рулетки по клубу: 7 сек результаты + 15 сек анимация + запас ≈ 23 сек
 const ROULETTE_COOLDOWN_MS = 23 * 1000;
 
-// Тестовый bypass геолокации: для номера +76666666666 можно крутить рулетку без проверки нахождения в клубе.
-// Включить: SPIN_GEO_BYPASS_ENABLED=true в .env. Отключить — убрать или поставить false.
+// Тестовый bypass геолокации: при SPIN_GEO_BYPASS_ENABLED=true можно крутить рулетку клуба GEO_BYPASS_CLUB_ID с любого расстояния.
+// Отключить — убрать SPIN_GEO_BYPASS_ENABLED или поставить false.
 const SPIN_GEO_BYPASS_ENABLED = process.env.SPIN_GEO_BYPASS_ENABLED === 'true';
-const GEO_BYPASS_PHONE_NORMALIZED = '76666666666';
-function isGeoBypassPhone(phone) {
-  if (!SPIN_GEO_BYPASS_ENABLED || !phone) return false;
-  const n = String(phone).replace(/\D/g, '').replace(/^8/, '7');
-  return n === GEO_BYPASS_PHONE_NORMALIZED;
+const GEO_BYPASS_CLUB_ID = process.env.GEO_BYPASS_CLUB_ID || '698fd131e3bc0f964e9b8948';
+function isGeoBypassForClub(club) {
+  if (!SPIN_GEO_BYPASS_ENABLED || !club?._id) return false;
+  return String(club._id) === String(GEO_BYPASS_CLUB_ID);
 }
 
 // @desc    Регистрация игрока
@@ -429,15 +428,15 @@ const spin = async (req, res) => {
       if (!club || !club.isActive) {
         return res.status(404).json({ message: 'Клуб не найден или неактивен' });
       }
-      if (!isGeoBypassPhone(user?.phone)) {
+      if (!isGeoBypassForClub(club)) {
         const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
         if (geoErr) return geoErr;
       }
     } else {
-      if (isGeoBypassPhone(user?.phone)) {
-        club = await Club.findOne({ isActive: true });
-        if (!club) {
-          return res.status(404).json({ message: 'Нет активных клубов' });
+      if (SPIN_GEO_BYPASS_ENABLED) {
+        club = await Club.findById(GEO_BYPASS_CLUB_ID);
+        if (!club || !club.isActive) {
+          return res.status(404).json({ message: 'Клуб не найден или неактивен' });
         }
       } else {
         if (latitude == null || longitude == null) {
@@ -465,22 +464,21 @@ const spinByPhone = async (req, res) => {
       return res.status(400).json({ message: 'Телефон обязателен' });
     }
     const normalized = String(phone).replace(/\D/g, '').replace(/^8/, '7');
-    const bypassGeo = isGeoBypassPhone(phone);
     let club = null;
     if (clubParam) {
       club = await resolveClub(clubParam);
       if (!club || !club.isActive) {
         return res.status(404).json({ message: 'Клуб не найден или неактивен' });
       }
-      if (!bypassGeo) {
+      if (!isGeoBypassForClub(club)) {
         const geoErr = checkGeoBeforeSpin(club, latitude, longitude, res);
         if (geoErr) return geoErr;
       }
     } else {
-      if (bypassGeo) {
-        club = await Club.findOne({ isActive: true });
-        if (!club) {
-          return res.status(404).json({ message: 'Нет активных клубов' });
+      if (SPIN_GEO_BYPASS_ENABLED) {
+        club = await Club.findById(GEO_BYPASS_CLUB_ID);
+        if (!club || !club.isActive) {
+          return res.status(404).json({ message: 'Клуб не найден или неактивен' });
         }
       } else {
         if (latitude == null || longitude == null) {
