@@ -14,6 +14,7 @@ const {
   createPrize,
   getPrizes,
   updatePrize,
+  reorderPrizes,
   deletePrize,
   getAnalytics,
   getAnalyticsByCity,
@@ -55,6 +56,7 @@ router.post('/users/:id/unban', unbanUser);
 // Управление призами (image + backgroundImage — фон картинкой)
 router.post('/prizes', prizeFiles, uploadPrizeFilesToS3, createPrize);
 router.get('/prizes', getPrizes);
+router.put('/prizes/reorder', reorderPrizes);
 router.put('/prizes/:id', prizeFiles, uploadPrizeFilesToS3, updatePrize);
 router.delete('/prizes/:id', deletePrize);
 

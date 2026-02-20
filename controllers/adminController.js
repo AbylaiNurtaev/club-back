@@ -555,6 +555,43 @@ const updatePrize = async (req, res) => {
   }
 };
 
+// @desc    Изменить порядок слотов рулетки (переместить призы по слотам)
+// @route   PUT /api/admin/prizes/reorder
+// @access  Private/Admin
+// Body: { order: ["prizeId1", "prizeId2", ...] } — массив _id призов в нужном порядке (индекс 0 = первый слот, 1 = второй и т.д.)
+const reorderPrizes = async (req, res) => {
+  try {
+    const { order } = req.body;
+    if (!Array.isArray(order) || order.length === 0) {
+      return res.status(400).json({ message: 'Передайте массив order с _id призов в нужном порядке' });
+    }
+
+    const ids = [...new Set(order)];
+    if (ids.length !== order.length) {
+      return res.status(400).json({ message: 'В order не должно быть повторяющихся призов' });
+    }
+
+    const prizes = await Prize.find({ _id: { $in: ids } });
+    if (prizes.length !== ids.length) {
+      return res.status(400).json({ message: 'Не все id призов найдены' });
+    }
+
+    const updates = order.map((prizeId, slotIndex) => ({
+      updateOne: {
+        filter: { _id: prizeId },
+        update: { $set: { slotIndex } },
+      },
+    }));
+
+    await Prize.bulkWrite(updates);
+
+    const updated = await Prize.find({ _id: { $in: ids } }).sort({ slotIndex: 1 });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Удалить приз
 // @route   DELETE /api/admin/prizes/:id
 // @access  Private/Admin
@@ -930,6 +967,7 @@ module.exports = {
   createPrize,
   getPrizes,
   updatePrize,
+  reorderPrizes,
   deletePrize,
   getAnalytics,
   getAnalyticsByCity,
