@@ -19,16 +19,20 @@ function maskPhone(phone) {
 /**
  * @param {string} phone - телефон игрока
  * @param {string} prizeName - название приза
- * @param {string} [playerName] - имя игрока (для playerId.name; фронт использует в winDisplayName)
+ * @param {string} [playerName] - имя игрока
+ * @param {string|Object} [userId] - id игрока (для подстановки имени по списку клуба)
  */
-function addRecentWin(phone, prizeName, playerName) {
+function addRecentWin(phone, prizeName, playerName, userId) {
   const masked = maskPhone(phone);
-  const text = `${masked} выиграл ${prizeName || 'Приз'}`;
-  const playerId = (playerName && playerName.trim()) ? { name: playerName.trim() } : undefined;
+  const prize = prizeName || 'Приз';
+  const text = `${masked} выиграл ${prize}`;
+  const nameStr = (playerName && String(playerName).trim()) ? String(playerName).trim() : '';
+  const playerId = nameStr ? { name: nameStr } : (userId ? { id: userId } : undefined);
   recentWins.push({
+    prizeName: prize,
     maskedPhone: masked,
-    prizeName: prizeName || 'Приз',
     text,
+    ...(nameStr && { name: nameStr, playerName: nameStr }),
     ...(playerId && { playerId }),
   });
   if (recentWins.length > MAX_RECENT) recentWins.shift();

@@ -324,7 +324,6 @@ async function doSpin(user, club, req, res) {
 
   const prizeInfo = await Prize.findById(prize._id).select('name description type value image backgroundImage dropChance slotIndex');
   const playerName = (user.name && String(user.name).trim()) ? String(user.name).trim() : '';
-  const playerIdPayload = playerName ? { name: playerName } : undefined;
   const spinPayload = {
     _id: spin._id,
     prize: {
@@ -342,12 +341,12 @@ async function doSpin(user, club, req, res) {
     cost: spinCost,
     createdAt: spin.createdAt,
     playerPhone: user.phone,
-    playerName,
-    name: playerName,
-    playerId: playerIdPayload,
+    playerName: playerName || undefined,
+    name: playerName || undefined,
+    playerId: playerName ? { name: playerName } : { id: user._id },
   };
 
-  addRecentWin(user.phone, prizeInfo.name, user.name);
+  addRecentWin(user.phone, prizeInfo.name, user.name, user._id);
   const recentWinsList = getRecentWins();
 
   const io = req.app.get('io');

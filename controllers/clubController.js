@@ -244,6 +244,46 @@ const getClubPlayers = async (req, res) => {
   }
 };
 
+// @desc    Список игроков клуба по clubId (для подстановки имён в spin/recentWins). Публичный.
+// @route   GET /api/clubs/:clubId/players
+// @access  Public
+const getClubPlayersByClubId = async (req, res) => {
+  try {
+    const clubId = req.params.clubId;
+    if (!clubId) {
+      return res.status(400).json({ message: 'clubId обязателен' });
+    }
+
+    let club = await Club.findById(clubId);
+    if (!club) {
+      club = await Club.findOne({ $or: [{ qrToken: clubId }, { pinCode: clubId }], isActive: true });
+    }
+    if (!club) {
+      return res.status(404).json({ message: 'Клуб не найден' });
+    }
+
+    const spinUserIds = await Spin.distinct('userId', { clubId: club._id });
+    if (spinUserIds.length === 0) {
+      return res.json([]);
+    }
+
+    const players = await User.find({ _id: { $in: spinUserIds }, role: 'player' })
+      .select('_id name')
+      .lean();
+
+    const list = players.map((p) => ({
+      _id: p._id,
+      id: p._id,
+      name: p.name || '',
+      fio: p.name || '',
+    }));
+
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Получить статистику игроков (по спинам в этом клубе)
 // @route   GET /api/clubs/players/stats
 // @access  Private/Club
@@ -502,6 +542,7 @@ module.exports = {
   updateMyClubTheme,
   uploadQrBackground,
   getClubPlayers,
+  getClubPlayersByClubId,
   getPlayersStats,
   getPrizeClaims,
   confirmPrizeClaim,
