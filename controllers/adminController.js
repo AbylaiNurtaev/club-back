@@ -443,8 +443,9 @@ const createPrize = async (req, res) => {
       return res.status(400).json({ message: 'Индекс слота должен быть от 0 до 34' });
     }
 
-    if (dropChance < 0 || dropChance > 100) {
-      return res.status(400).json({ message: 'Вероятность должна быть от 0 до 100' });
+    const dropChanceNum = Number(dropChance);
+    if (Number.isNaN(dropChanceNum) || dropChanceNum < 0 || dropChanceNum > 100) {
+      return res.status(400).json({ message: 'Вероятность должна быть числом от 0 до 100 (допускаются дроби)' });
     }
 
     // Проверка, что слот не занят
@@ -463,7 +464,7 @@ const createPrize = async (req, res) => {
       value,
       image,
       backgroundImage,
-      dropChance,
+      dropChance: dropChanceNum,
       slotIndex,
       totalQuantity: totalQuantity || null,
       remainingQuantity: totalQuantity || null,
@@ -534,7 +535,13 @@ const updatePrize = async (req, res) => {
     if (description !== undefined) prize.description = description;
     if (type) prize.type = type;
     if (value !== undefined) prize.value = value;
-    if (dropChance !== undefined) prize.dropChance = dropChance;
+    if (dropChance !== undefined) {
+      const dropChanceNum = Number(dropChance);
+      if (Number.isNaN(dropChanceNum) || dropChanceNum < 0 || dropChanceNum > 100) {
+        return res.status(400).json({ message: 'Вероятность должна быть числом от 0 до 100 (допускаются дроби)' });
+      }
+      prize.dropChance = dropChanceNum;
+    }
     if (slotIndex !== undefined) prize.slotIndex = slotIndex;
     if (isActive !== undefined) prize.isActive = isActive === true || isActive === 'true';
     if (totalQuantity !== undefined) {

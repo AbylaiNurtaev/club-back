@@ -24,7 +24,7 @@ const prizeSchema = new mongoose.Schema({
     type: String, // URL фона картинкой (задаётся в админке)
   },
   dropChance: {
-    type: Number, // Процент выпадения (0-100)
+    type: Number, // Процент выпадения (0–100), число с плавающей точкой
     required: true,
     default: 0,
   },
