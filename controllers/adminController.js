@@ -439,8 +439,8 @@ const createPrize = async (req, res) => {
       return res.status(400).json({ message: 'Не все обязательные поля заполнены' });
     }
 
-    if (slotIndex < 0 || slotIndex > 24) {
-      return res.status(400).json({ message: 'Индекс слота должен быть от 0 до 24' });
+    if (slotIndex < 0 || slotIndex > 34) {
+      return res.status(400).json({ message: 'Индекс слота должен быть от 0 до 34' });
     }
 
     if (dropChance < 0 || dropChance > 100) {

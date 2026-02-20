@@ -29,7 +29,7 @@ const prizeSchema = new mongoose.Schema({
     default: 0,
   },
   slotIndex: {
-    type: Number, // Индекс слота в рулетке (0-24)
+    type: Number, // Индекс слота в рулетке (0-34)
     required: true,
   },
   isActive: {
