@@ -130,6 +130,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/players', require('./routes/playerRoutes'));
 app.use('/api/clubs', require('./routes/clubRoutes'));
+app.use('/api/company', require('./routes/companyRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Тестовый роут
