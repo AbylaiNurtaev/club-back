@@ -32,6 +32,7 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   'https://git-front-sandy.vercel.app',
+  'https://app.spinclub.kz',
   'http://localhost:5173',
 ];
 
