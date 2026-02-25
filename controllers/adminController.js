@@ -713,31 +713,48 @@ const getClubAnalytics = async (req, res) => {
       return res.status(404).json({ message: 'Клуб не найден' });
     }
 
-    const [playerCount, spinStats, prizeClaimCount, recentSpins] = await Promise.all([
-      User.countDocuments({ role: 'player', clubId: club._id }),
+    const [uniquePlayersResult, spinStats, prizeClaimCount, recentSpinsRaw] = await Promise.all([
+      // Игроки клуба = уникальные userId по спинам (User.clubId часто не заполнен)
+      Spin.aggregate([
+        { $match: { clubId: club._id } },
+        { $group: { _id: '$userId' } },
+        { $count: 'playerCount' },
+      ]).then((r) => r[0] || { playerCount: 0 }),
       Spin.aggregate([
         { $match: { clubId: club._id } },
         { $group: { _id: null, count: { $sum: 1 }, totalSpent: { $sum: '$cost' } } },
       ]).then((r) => r[0] || { count: 0, totalSpent: 0 }),
       PrizeClaim.countDocuments({ clubId: club._id }),
       Spin.find({ clubId: club._id })
-        .populate('userId', 'phone')
+        .populate('userId', 'phone name')
         .populate('prizeId', 'name type')
         .sort({ createdAt: -1 })
         .limit(50)
         .lean(),
     ]);
 
+    const playerCount = uniquePlayersResult.playerCount ?? 0;
+
+    const recentSpins = recentSpinsRaw.map((spin) => ({
+      id: spin._id,
+      playerName: spin.userId?.name ?? '',
+      playerPhone: spin.userId?.phone ?? '',
+      playerId: spin.userId?._id ?? null,
+      prizeName: spin.prizeId?.name ?? '',
+      prizeId: spin.prizeId?._id ?? null,
+      createdAt: spin.createdAt,
+    }));
+
     res.json({
       club: {
-        _id: club._id,
+        id: club._id,
         name: club.name,
-        clubId: club.clubId,
         address: club.address,
-        city: club.city || '',
+        city: club.city ?? '',
         managerFio: club.managerFio,
+        phone: club.ownerId?.phone,
+        clubId: club.clubId,
         isActive: club.isActive,
-        ownerPhone: club.ownerId?.phone,
       },
       analytics: {
         playerCount,
