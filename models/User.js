@@ -62,7 +62,8 @@ const userSchema = new mongoose.Schema({
     trim: true,
     minlength: 6,
     maxlength: 6,
-    default: null,
+    // Важно: не сохраняем null, иначе unique индекс конфликтует при создании club/admin
+    default: undefined,
   },
   createdAt: {
     type: Date,
