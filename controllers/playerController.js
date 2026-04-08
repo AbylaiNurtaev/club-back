@@ -10,6 +10,7 @@ const { spinRoulette } = require('../utils/roulette');
 const { addRecentWin, getRecentWins } = require('../utils/recentWins');
 const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M, distanceMeters } = require('../utils/geo');
 const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, REFERRAL_POINTS } = require('../utils/referralService');
+const { syncPrizePointsToSmartshellDeposit } = require('../utils/smartshellBilling');
 
 // Блокировка рулетки по клубу: 7 сек результаты + 15 сек анимация + запас ≈ 23 сек
 const ROULETTE_COOLDOWN_MS = 23 * 1000;
@@ -296,6 +297,11 @@ async function doSpin(user, club, req, res) {
       description: `Выигрыш: ${prize.name}`,
       relatedSpinId: spin._id,
     });
+    try {
+      await syncPrizePointsToSmartshellDeposit(user.phone, prize.value);
+    } catch (err) {
+      console.error('[smartshell] начисление депозита после приза (баллы):', err?.message || err);
+    }
   } else if (prize.type === 'club_time') {
     await PrizeClaim.create({
       userId: user._id,
