@@ -76,15 +76,18 @@ async function fetchAccessToken() {
     throw new Error('SmartShell: задайте SMARTSHELL_LOGIN, SMARTSHELL_PASSWORD и SMARTSHELL_COMPANY_ID');
   }
 
+  console.log(`[smartshell] авторизация: login=${login}, company_id=${companyId}, url=${getGraphqlUrl()}`);
   const query = `mutation { login(input: { login: "${escapeGraphQLString(login)}", password: "${escapeGraphQLString(password)}", company_id: ${companyId} }) { access_token expires_in } }`;
   const json = await postGraphql(query, null);
 
   if (json.errors && json.errors.length) {
+    console.error('[smartshell] ошибка авторизации:', json.errors);
     throw new Error(`SmartShell login: ${json.errors.map((e) => e.message).join('; ')}`);
   }
 
   const accessToken = json?.data?.login?.access_token;
   if (!accessToken) {
+    console.error('[smartshell] нет access_token в ответе:', JSON.stringify(json));
     throw new Error(`SmartShell login: нет access_token в ответе: ${JSON.stringify(json)}`);
   }
 
@@ -94,6 +97,7 @@ async function fetchAccessToken() {
     accessToken,
     expiresAt: Date.now() + expiresInSec * 1000 - marginMs,
   };
+  console.log(`[smartshell] авторизация успешна, токен действует ${expiresInSec}с`);
   return accessToken;
 }
 
@@ -155,16 +159,22 @@ function findClientByPhone(clients, playerPhone) {
 
 async function resolveClientOrWarn(playerPhone, fields) {
   if (!isSmartShellBillingConfigured()) {
+    console.warn('[smartshell] интеграция не настроена (SMARTSHELL_LOGIN/PASSWORD/COMPANY_ID) — пропуск');
     return { skipped: true, reason: 'smartshell_not_configured' };
   }
+  const normalized = normalizePhoneDigits(playerPhone);
+  console.log(`[smartshell] ищем клиента: телефон=${playerPhone}, нормализован=${normalized}`);
   const clients = await fetchClients(fields);
+  console.log(`[smartshell] получено клиентов из SmartShell: ${clients.length}`);
   const client = findClientByPhone(clients, playerPhone);
   if (!client || !client.uuid) {
     console.warn(
-      `[smartshell] клиент не найден по телефону: ${playerPhone} (нормализовано: ${normalizePhoneDigits(playerPhone)})`
+      `[smartshell] клиент НЕ НАЙДЕН по телефону: ${playerPhone} (нормализовано: ${normalized}). ` +
+      `Первые 5 телефонов в базе SmartShell: ${clients.slice(0, 5).map((c) => c.phone || c.login || c.nickname).join(', ')}`
     );
     return { ok: false, reason: 'client_not_found', phone: playerPhone };
   }
+  console.log(`[smartshell] клиент найден: uuid=${client.uuid}, login=${client.login}, phone=${client.phone}`);
   return { ok: true, client };
 }
 
@@ -174,9 +184,11 @@ async function resolveClientOrWarn(playerPhone, fields) {
 async function syncBalancePrizeToSmartshellDeposit(playerPhone, delta) {
   const amount = Number(delta);
   if (!Number.isFinite(amount) || amount === 0) {
+    console.warn(`[smartshell] setDeposit пропущен: delta невалидна или 0 (получено: ${delta})`);
     return { ok: true, skipped: true, reason: 'invalid_or_zero_amount' };
   }
 
+  console.log(`[smartshell] setDeposit: телефон=${playerPhone}, delta=+${amount}`);
   const resolved = await resolveClientOrWarn(playerPhone, 'uuid phone nickname login deposit');
   if (resolved.skipped) return { ok: true, ...resolved };
   if (!resolved.ok) return resolved;
@@ -188,9 +200,12 @@ async function syncBalancePrizeToSmartshellDeposit(playerPhone, delta) {
 
   const uuid = escapeGraphQLString(client.uuid);
   const mutation = `mutation { setDeposit(input: { client_uuid: "${uuid}", value: ${newValue} }) { id login nickname } }`;
+  console.log(`[smartshell] setDeposit мутация: deposit ${base} → ${newValue}, uuid=${client.uuid}`);
   const json = await graphqlAuthorized(mutation);
+  console.log(`[smartshell] setDeposit ответ:`, JSON.stringify(json));
 
   if (json.errors && json.errors.length) {
+    console.error('[smartshell] setDeposit ошибки GraphQL:', json.errors);
     throw new Error(json.errors.map((e) => e.message).join('; '));
   }
 
@@ -199,6 +214,7 @@ async function syncBalancePrizeToSmartshellDeposit(playerPhone, delta) {
     throw new Error(`SmartShell setDeposit: пустой ответ: ${JSON.stringify(json)}`);
   }
 
+  console.log(`[smartshell] setDeposit успех: id=${setData.id}, login=${setData.login}`);
   return {
     ok: true,
     clientUuid: client.uuid,
@@ -215,9 +231,11 @@ async function syncBalancePrizeToSmartshellDeposit(playerPhone, delta) {
 async function syncPointsPrizeToSmartshellBalance(playerPhone, delta) {
   const amount = Number(delta);
   if (!Number.isFinite(amount) || amount === 0) {
+    console.warn(`[smartshell] setBalance пропущен: delta невалидна или 0 (получено: ${delta})`);
     return { ok: true, skipped: true, reason: 'invalid_or_zero_amount' };
   }
 
+  console.log(`[smartshell] setBalance: телефон=${playerPhone}, delta=+${amount}`);
   const resolved = await resolveClientOrWarn(playerPhone, 'uuid phone nickname login balance');
   if (resolved.skipped) return { ok: true, ...resolved };
   if (!resolved.ok) return resolved;
@@ -229,9 +247,12 @@ async function syncPointsPrizeToSmartshellBalance(playerPhone, delta) {
 
   const uuid = escapeGraphQLString(client.uuid);
   const mutation = `mutation { setBalance(input: { client_uuid: "${uuid}", value: ${newValue} }) { id login nickname } }`;
+  console.log(`[smartshell] setBalance мутация: balance ${base} → ${newValue}, uuid=${client.uuid}`);
   const json = await graphqlAuthorized(mutation);
+  console.log(`[smartshell] setBalance ответ:`, JSON.stringify(json));
 
   if (json.errors && json.errors.length) {
+    console.error('[smartshell] setBalance ошибки GraphQL:', json.errors);
     throw new Error(json.errors.map((e) => e.message).join('; '));
   }
 
@@ -240,6 +261,7 @@ async function syncPointsPrizeToSmartshellBalance(playerPhone, delta) {
     throw new Error(`SmartShell setBalance: пустой ответ: ${JSON.stringify(json)}`);
   }
 
+  console.log(`[smartshell] setBalance успех: id=${setData.id}, login=${setData.login}`);
   return {
     ok: true,
     clientUuid: client.uuid,
@@ -255,6 +277,7 @@ async function syncPointsPrizeToSmartshellBalance(playerPhone, delta) {
 async function createSmartshellProductPayment(playerPhone, entityId, options = {}) {
   const id = Number(entityId);
   if (!Number.isFinite(id) || id <= 0) {
+    console.error(`[smartshell] createPayment: неверный entity_id товара: ${entityId}`);
     throw new Error('SmartShell createPayment: неверный entity_id товара');
   }
 
@@ -262,6 +285,7 @@ async function createSmartshellProductPayment(playerPhone, entityId, options = {
   const amount = Number.isFinite(qtyRaw) && qtyRaw >= 1 ? Math.floor(qtyRaw) : 1;
   const sum = options.sum !== undefined ? Number(options.sum) : 0;
 
+  console.log(`[smartshell] createPayment: телефон=${playerPhone}, entity_id=${id}, amount=${amount}, sum=${sum}`);
   const resolved = await resolveClientOrWarn(playerPhone, 'uuid phone nickname login');
   if (resolved.skipped) return { ok: true, ...resolved };
   if (!resolved.ok) return resolved;
@@ -269,9 +293,12 @@ async function createSmartshellProductPayment(playerPhone, entityId, options = {
   const { client } = resolved;
   const uuid = escapeGraphQLString(client.uuid);
   const mutation = `mutation { createPayment(input: { method: CASH, client_uuid: "${uuid}", items: [{ type: GOOD, entity_id: ${id}, amount: ${amount}, sum: ${sum} }] }) { id sum status } }`;
+  console.log(`[smartshell] createPayment мутация: ${mutation}`);
   const json = await graphqlAuthorized(mutation);
+  console.log(`[smartshell] createPayment ответ:`, JSON.stringify(json));
 
   if (json.errors && json.errors.length) {
+    console.error('[smartshell] createPayment ошибки GraphQL:', json.errors);
     throw new Error(json.errors.map((e) => e.message).join('; '));
   }
 
@@ -280,6 +307,7 @@ async function createSmartshellProductPayment(playerPhone, entityId, options = {
     throw new Error(`SmartShell createPayment: пустой ответ: ${JSON.stringify(json)}`);
   }
 
+  console.log(`[smartshell] createPayment успех: id=${pay.id}, status=${pay.status}, sum=${pay.sum}`);
   return {
     ok: true,
     clientUuid: client.uuid,

@@ -267,13 +267,17 @@ async function doSpin(user, club, req, res) {
   }
 
   const prize = await spinRoulette();
+  console.log(`[spin] выпал приз: name="${prize.name}", type=${prize.type}, value=${prize.value}, productEntityId=${prize.productEntityId ?? 'н/д'}, remainingQuantity=${prize.remainingQuantity}, totalQuantity=${prize.totalQuantity}`);
+
   if (prize.totalQuantity !== null && prize.remainingQuantity <= 0) {
+    console.warn(`[spin] приз закончился: ${prize.name}`);
     return res.status(400).json({ message: 'Приз закончился' });
   }
 
   if (prize.type === 'product') {
     const pe = prize.productEntityId;
     if (pe == null || !Number.isFinite(Number(pe)) || Number(pe) <= 0) {
+      console.error(`[spin] приз-товар "${prize.name}" не имеет валидного productEntityId: ${pe}`);
       return res.status(503).json({ message: 'Приз-товар недоступен: не задан id товара (productEntityId)' });
     }
   }
@@ -302,6 +306,7 @@ async function doSpin(user, club, req, res) {
   const amountOk = Number.isFinite(prizeAmount) && prizeAmount > 0;
 
   if (prize.type === 'balance') {
+    console.log(`[spin] тип приза: balance, сумма=${prizeAmount}, amountOk=${amountOk}, телефон=${user.phone}`);
     if (amountOk) {
       user.balance += prizeAmount;
       await user.save();
@@ -315,12 +320,17 @@ async function doSpin(user, club, req, res) {
     }
     try {
       if (amountOk) {
-        await syncBalancePrizeToSmartshellDeposit(user.phone, prizeAmount);
+        console.log(`[spin] вызов syncBalancePrizeToSmartshellDeposit: телефон=${user.phone}, delta=${prizeAmount}`);
+        const result = await syncBalancePrizeToSmartshellDeposit(user.phone, prizeAmount);
+        console.log(`[spin] syncBalancePrizeToSmartshellDeposit результат:`, JSON.stringify(result));
+      } else {
+        console.warn(`[spin] syncBalancePrizeToSmartshellDeposit пропущен: amountOk=false (value=${prize.value})`);
       }
     } catch (err) {
       console.error('[smartshell] setDeposit после приза «баланс»:', err?.message || err);
     }
   } else if (prize.type === 'points') {
+    console.log(`[spin] тип приза: points, сумма=${prizeAmount}, amountOk=${amountOk}, телефон=${user.phone}`);
     if (amountOk) {
       user.balance += prizeAmount;
       await user.save();
@@ -334,7 +344,11 @@ async function doSpin(user, club, req, res) {
     }
     try {
       if (amountOk) {
-        await syncPointsPrizeToSmartshellBalance(user.phone, prizeAmount);
+        console.log(`[spin] вызов syncPointsPrizeToSmartshellBalance: телефон=${user.phone}, delta=${prizeAmount}`);
+        const result = await syncPointsPrizeToSmartshellBalance(user.phone, prizeAmount);
+        console.log(`[spin] syncPointsPrizeToSmartshellBalance результат:`, JSON.stringify(result));
+      } else {
+        console.warn(`[spin] syncPointsPrizeToSmartshellBalance пропущен: amountOk=false (value=${prize.value})`);
       }
     } catch (err) {
       console.error('[smartshell] setBalance после приза «баллы»:', err?.message || err);
@@ -342,6 +356,7 @@ async function doSpin(user, club, req, res) {
   } else if (prize.type === 'product') {
     const qtyRaw = Number(prize.value);
     const qty = Number.isFinite(qtyRaw) && qtyRaw >= 1 ? Math.floor(qtyRaw) : 1;
+    console.log(`[spin] тип приза: product, name="${prize.name}", productEntityId=${prize.productEntityId}, qty=${qty}, телефон=${user.phone}`);
     await PrizeClaim.create({
       userId: user._id,
       spinId: spin._id,
@@ -358,7 +373,9 @@ async function doSpin(user, club, req, res) {
       relatedSpinId: spin._id,
     });
     try {
-      await createSmartshellProductPayment(user.phone, prize.productEntityId, { amount: qty, sum: 0 });
+      console.log(`[spin] вызов createSmartshellProductPayment: телефон=${user.phone}, entity_id=${prize.productEntityId}, qty=${qty}`);
+      const result = await createSmartshellProductPayment(user.phone, prize.productEntityId, { amount: qty, sum: 0 });
+      console.log(`[spin] createSmartshellProductPayment результат:`, JSON.stringify(result));
     } catch (err) {
       console.error('[smartshell] createPayment после приза «товар»:', err?.message || err);
     }
