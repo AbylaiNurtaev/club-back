@@ -11,11 +11,16 @@ const prizeSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['physical', 'points', 'club_time', 'other'],
+    enum: ['balance', 'points', 'product', 'other'],
     required: true,
   },
+  /** ID товара в SmartShell (entity_id для GOOD); обязателен для type === 'product' */
+  productEntityId: {
+    type: Number,
+    default: null,
+  },
   value: {
-    type: Number, // Количество баллов, минут времени и т.д.
+    type: Number, // Сумма начисления (баланс/баллы), количество для товара (шт.), для other не используется
   },
   image: {
     type: String, // URL изображения

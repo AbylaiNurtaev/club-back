@@ -431,37 +431,151 @@ const deleteUser = async (req, res) => {
 // @desc    Создать приз
 // @route   POST /api/admin/prizes
 // @access  Private/Admin
+const PRIZE_TYPES = ['balance', 'points', 'product', 'other'];
+
+/** FormData / фронт могут слать productEntityId или product_entity_id; дубликаты ключей иногда приходят массивом */
+function scalarField(v) {
+  if (v === undefined || v === null) return undefined;
+  if (Array.isArray(v)) {
+    const last = v[v.length - 1];
+    return last === undefined || last === null ? undefined : last;
+  }
+  return v;
+}
+
+/** FormData / фронт могут слать productEntityId или product_entity_id */
+function readProductEntityIdFromBody(body) {
+  const a = scalarField(body?.productEntityId);
+  const b = scalarField(body?.product_entity_id);
+  if (a !== undefined && String(a).trim() !== '') return a;
+  if (b !== undefined && String(b).trim() !== '') return b;
+  return undefined;
+}
+
+function isProductEntityIdKeyPresent(body) {
+  return (
+    Object.prototype.hasOwnProperty.call(body, 'productEntityId')
+    || Object.prototype.hasOwnProperty.call(body, 'product_entity_id')
+  );
+}
+
+const PRIZE_LOG_PREFIX = '[admin/prizes]';
+
+function pickBodyField(body, key) {
+  const v = body?.[key];
+  if (v === undefined) return undefined;
+  if (Array.isArray(v)) {
+    return { _array: true, length: v.length, first: v[0], last: v[v.length - 1] };
+  }
+  if (typeof v === 'string' && v.length > 100) {
+    return `${v.slice(0, 97)}...`;
+  }
+  return v;
+}
+
+/** Снимок multipart/JSON тела для отладки (без файлов). */
+function summarizePrizeRequest(req) {
+  const body = req.body;
+  const keys = body && typeof body === 'object' ? Object.keys(body) : [];
+  const resolvedPe = readProductEntityIdFromBody(body);
+  return {
+    contentType: req.headers['content-type']?.split(';')[0],
+    adminUserId: req.user?._id?.toString(),
+    prizeId: req.params?.id,
+    bodyKeys: keys,
+    fields: {
+      type: pickBodyField(body, 'type'),
+      name: pickBodyField(body, 'name'),
+      slotIndex: pickBodyField(body, 'slotIndex'),
+      dropChance: pickBodyField(body, 'dropChance'),
+      value: pickBodyField(body, 'value'),
+      productEntityId: pickBodyField(body, 'productEntityId'),
+      product_entity_id: pickBodyField(body, 'product_entity_id'),
+    },
+    productEntityIdResolved: resolvedPe,
+    productEntityIdAsNumber: resolvedPe !== undefined ? Number(resolvedPe) : undefined,
+    files: {
+      image: Boolean(req.files?.image?.[0]),
+      backgroundImage: Boolean(req.files?.backgroundImage?.[0]),
+    },
+  };
+}
+
+function logPrizeRejected(action, req, reason, extra = {}) {
+  console.warn(`${PRIZE_LOG_PREFIX} ${action} → 400: ${reason}`, {
+    ...summarizePrizeRequest(req),
+    ...extra,
+  });
+}
+
 const createPrize = async (req, res) => {
   try {
     const { name, description, type, value, dropChance, slotIndex, totalQuantity } = req.body;
+    const productEntityIdRaw = readProductEntityIdFromBody(req.body);
+
+    console.info(`${PRIZE_LOG_PREFIX} POST /prizes (создание)`, summarizePrizeRequest(req));
 
     if (!name || !type || dropChance === undefined || slotIndex === undefined) {
+      logPrizeRejected('POST /prizes', req, 'не все обязательные поля', {
+        hasName: Boolean(name),
+        hasType: Boolean(type),
+        hasDropChance: dropChance !== undefined,
+        hasSlotIndex: slotIndex !== undefined,
+      });
       return res.status(400).json({ message: 'Не все обязательные поля заполнены' });
     }
 
+    if (!PRIZE_TYPES.includes(type)) {
+      logPrizeRejected('POST /prizes', req, 'недопустимый type', { type });
+      return res.status(400).json({ message: `Тип приза: одно из ${PRIZE_TYPES.join(', ')}` });
+    }
+
+    if (type === 'product') {
+      const pe = productEntityIdRaw !== undefined ? Number(productEntityIdRaw) : NaN;
+      if (!Number.isFinite(pe) || pe <= 0) {
+        logPrizeRejected('POST /prizes', req, 'товар без валидного id товара', {
+          productEntityIdRaw,
+          parsed: pe,
+          keysPresent: {
+            productEntityId: Object.prototype.hasOwnProperty.call(req.body, 'productEntityId'),
+            product_entity_id: Object.prototype.hasOwnProperty.call(req.body, 'product_entity_id'),
+          },
+        });
+        return res.status(400).json({
+          message: 'Для товара укажите productEntityId или product_entity_id (id товара в SmartShell)',
+        });
+      }
+    }
+
     if (slotIndex < 0 || slotIndex > 34) {
+      logPrizeRejected('POST /prizes', req, 'slotIndex вне 0–34', { slotIndex });
       return res.status(400).json({ message: 'Индекс слота должен быть от 0 до 34' });
     }
 
     const dropChanceNum = Number(dropChance);
     if (Number.isNaN(dropChanceNum) || dropChanceNum < 0 || dropChanceNum > 100) {
+      logPrizeRejected('POST /prizes', req, 'некорректный dropChance', { dropChance, dropChanceNum });
       return res.status(400).json({ message: 'Вероятность должна быть числом от 0 до 100 (допускаются дроби)' });
     }
 
     // Проверка, что слот не занят
     const existingPrize = await Prize.findOne({ slotIndex, isActive: true });
     if (existingPrize) {
+      logPrizeRejected('POST /prizes', req, 'слот занят', { slotIndex, occupiedByPrizeId: String(existingPrize._id) });
       return res.status(400).json({ message: 'Слот уже занят другим призом' });
     }
 
     const image = req.files?.image?.[0]?.location ?? req.file?.location ?? null;
     const backgroundImage = req.files?.backgroundImage?.[0]?.location ?? null;
 
+    const peStored = type === 'product' ? Number(productEntityIdRaw) : null;
+
     const prize = await Prize.create({
       name,
       description,
       type,
       value,
+      productEntityId: peStored,
       image,
       backgroundImage,
       dropChance: dropChanceNum,
@@ -470,8 +584,10 @@ const createPrize = async (req, res) => {
       remainingQuantity: totalQuantity || null,
     });
 
+    console.info(`${PRIZE_LOG_PREFIX} POST /prizes OK`, { prizeId: String(prize._id), type: prize.type, slotIndex: prize.slotIndex });
     res.status(201).json(prize);
   } catch (error) {
+    console.error(`${PRIZE_LOG_PREFIX} POST /prizes 500`, summarizePrizeRequest(req), error?.message, error?.stack);
     if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
     if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
     if (req.file?.location) await deleteFromS3(req.file.location);
@@ -497,7 +613,19 @@ const getPrizes = async (req, res) => {
 // @access  Private/Admin
 const updatePrize = async (req, res) => {
   try {
-    const { name, description, type, value, dropChance, slotIndex, isActive, totalQuantity, removeBackgroundImage } = req.body;
+    const {
+      name,
+      description,
+      type,
+      value,
+      dropChance,
+      slotIndex,
+      isActive,
+      totalQuantity,
+      removeBackgroundImage,
+    } = req.body;
+
+    console.info(`${PRIZE_LOG_PREFIX} PUT /prizes/:id (обновление)`, summarizePrizeRequest(req));
 
     const prize = await Prize.findById(req.params.id);
     if (!prize) {
@@ -511,6 +639,7 @@ const updatePrize = async (req, res) => {
       if (existingPrize) {
         if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
         if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
+        logPrizeRejected('PUT /prizes/:id', req, 'слот занят', { slotIndex, occupiedByPrizeId: String(existingPrize._id) });
         return res.status(400).json({ message: 'Слот уже занят другим призом' });
       }
     }
@@ -533,11 +662,42 @@ const updatePrize = async (req, res) => {
 
     if (name) prize.name = name;
     if (description !== undefined) prize.description = description;
-    if (type) prize.type = type;
+    if (type) {
+      if (!PRIZE_TYPES.includes(type)) {
+        logPrizeRejected('PUT /prizes/:id', req, 'недопустимый type', { type });
+        return res.status(400).json({ message: `Тип приза: одно из ${PRIZE_TYPES.join(', ')}` });
+      }
+      prize.type = type;
+      if (type !== 'product') {
+        prize.productEntityId = null;
+      }
+    }
+    if (isProductEntityIdKeyPresent(req.body)) {
+      const raw = readProductEntityIdFromBody(req.body);
+      if (raw === undefined) {
+        prize.productEntityId = null;
+      } else {
+        const pe = Number(raw);
+        if (!Number.isFinite(pe) || pe <= 0) {
+          logPrizeRejected('PUT /prizes/:id', req, 'некорректный productEntityId', { raw, parsed: pe });
+          return res.status(400).json({ message: 'productEntityId / product_entity_id должен быть положительным числом' });
+        }
+        prize.productEntityId = pe;
+      }
+    }
+    if (prize.type === 'product' && (prize.productEntityId == null || !Number.isFinite(Number(prize.productEntityId)))) {
+      logPrizeRejected('PUT /prizes/:id', req, 'тип product без сохранённого entity id', {
+        typeAfter: prize.type,
+        productEntityId: prize.productEntityId,
+        bodyHadPeKeys: isProductEntityIdKeyPresent(req.body),
+      });
+      return res.status(400).json({ message: 'Для товара задайте productEntityId или product_entity_id' });
+    }
     if (value !== undefined) prize.value = value;
     if (dropChance !== undefined) {
       const dropChanceNum = Number(dropChance);
       if (Number.isNaN(dropChanceNum) || dropChanceNum < 0 || dropChanceNum > 100) {
+        logPrizeRejected('PUT /prizes/:id', req, 'некорректный dropChance', { dropChance, dropChanceNum });
         return res.status(400).json({ message: 'Вероятность должна быть числом от 0 до 100 (допускаются дроби)' });
       }
       prize.dropChance = dropChanceNum;
@@ -554,8 +714,10 @@ const updatePrize = async (req, res) => {
 
     await prize.save();
 
+    console.info(`${PRIZE_LOG_PREFIX} PUT /prizes/:id OK`, { prizeId: String(prize._id), type: prize.type, slotIndex: prize.slotIndex });
     res.json(prize);
   } catch (error) {
+    console.error(`${PRIZE_LOG_PREFIX} PUT /prizes/:id 500`, summarizePrizeRequest(req), error?.message, error?.stack);
     if (req.files?.image?.[0]?.location) await deleteFromS3(req.files.image[0].location);
     if (req.files?.backgroundImage?.[0]?.location) await deleteFromS3(req.files.backgroundImage[0].location);
     res.status(500).json({ message: error.message });

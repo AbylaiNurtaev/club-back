@@ -10,7 +10,11 @@ const { spinRoulette } = require('../utils/roulette');
 const { addRecentWin, getRecentWins } = require('../utils/recentWins');
 const { isWithinSpinRadius, MAX_SPIN_DISTANCE_M, distanceMeters } = require('../utils/geo');
 const { attachReferrer, tryApproveReferral, getReferralCode, getReferralLink, REFERRAL_POINTS } = require('../utils/referralService');
-const { syncPrizePointsToSmartshellDeposit } = require('../utils/smartshellBilling');
+const {
+  syncBalancePrizeToSmartshellDeposit,
+  syncPointsPrizeToSmartshellBalance,
+  createSmartshellProductPayment,
+} = require('../utils/smartshellBilling');
 
 // Блокировка рулетки по клубу: 7 сек результаты + 15 сек анимация + запас ≈ 23 сек
 const ROULETTE_COOLDOWN_MS = 23 * 1000;
@@ -267,6 +271,13 @@ async function doSpin(user, club, req, res) {
     return res.status(400).json({ message: 'Приз закончился' });
   }
 
+  if (prize.type === 'product') {
+    const pe = prize.productEntityId;
+    if (pe == null || !Number.isFinite(Number(pe)) || Number(pe) <= 0) {
+      return res.status(503).json({ message: 'Приз-товар недоступен: не задан id товара (productEntityId)' });
+    }
+  }
+
   const spin = await Spin.create({
     userId: user._id,
     clubId: club._id,
@@ -287,40 +298,94 @@ async function doSpin(user, club, req, res) {
   });
 
   let prizeTransaction = null;
-  if (prize.type === 'points') {
-    user.balance += prize.value;
-    await user.save();
+  const prizeAmount = Number(prize.value);
+  const amountOk = Number.isFinite(prizeAmount) && prizeAmount > 0;
+
+  if (prize.type === 'balance') {
+    if (amountOk) {
+      user.balance += prizeAmount;
+      await user.save();
+      prizeTransaction = await Transaction.create({
+        userId: user._id,
+        type: 'prize_balance',
+        amount: prizeAmount,
+        description: `Выигрыш (баланс): ${prize.name}`,
+        relatedSpinId: spin._id,
+      });
+    }
+    try {
+      if (amountOk) {
+        await syncBalancePrizeToSmartshellDeposit(user.phone, prizeAmount);
+      }
+    } catch (err) {
+      console.error('[smartshell] setDeposit после приза «баланс»:', err?.message || err);
+    }
+  } else if (prize.type === 'points') {
+    if (amountOk) {
+      user.balance += prizeAmount;
+      await user.save();
+      prizeTransaction = await Transaction.create({
+        userId: user._id,
+        type: 'prize_points',
+        amount: prizeAmount,
+        description: `Выигрыш (баллы): ${prize.name}`,
+        relatedSpinId: spin._id,
+      });
+    }
+    try {
+      if (amountOk) {
+        await syncPointsPrizeToSmartshellBalance(user.phone, prizeAmount);
+      }
+    } catch (err) {
+      console.error('[smartshell] setBalance после приза «баллы»:', err?.message || err);
+    }
+  } else if (prize.type === 'product') {
+    const qtyRaw = Number(prize.value);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw >= 1 ? Math.floor(qtyRaw) : 1;
+    await PrizeClaim.create({
+      userId: user._id,
+      spinId: spin._id,
+      prizeId: prize._id,
+      clubId: club._id,
+      status: 'completed',
+      confirmedAt: new Date(),
+    });
     prizeTransaction = await Transaction.create({
       userId: user._id,
-      type: 'prize_points',
-      amount: prize.value,
-      description: `Выигрыш: ${prize.name}`,
+      type: 'prize_product',
+      amount: qty,
+      description: `Выигрыш (товар): ${prize.name}`,
       relatedSpinId: spin._id,
     });
     try {
-      await syncPrizePointsToSmartshellDeposit(user.phone, prize.value);
+      await createSmartshellProductPayment(user.phone, prize.productEntityId, { amount: qty, sum: 0 });
     } catch (err) {
-      console.error('[smartshell] начисление депозита после приза (баллы):', err?.message || err);
+      console.error('[smartshell] createPayment после приза «товар»:', err?.message || err);
     }
-  } else if (prize.type === 'club_time') {
-    await PrizeClaim.create({
-      userId: user._id,
-      spinId: spin._id,
-      prizeId: prize._id,
-      clubId: club._id,
-      status: 'completed',
-      confirmedAt: new Date(),
-      clubTimeMinutes: prize.value,
-    });
+  } else if (prize.type === 'other') {
+    // только Spin, без начислений и SmartShell
   } else {
-    await PrizeClaim.create({
-      userId: user._id,
-      spinId: spin._id,
-      prizeId: prize._id,
-      clubId: club._id,
-      status: 'completed',
-      confirmedAt: new Date(),
-    });
+    // Устаревшие типы из БД (physical / club_time и т.д.) до миграции
+    if (prize.type === 'club_time') {
+      await PrizeClaim.create({
+        userId: user._id,
+        spinId: spin._id,
+        prizeId: prize._id,
+        clubId: club._id,
+        status: 'completed',
+        confirmedAt: new Date(),
+        clubTimeMinutes: prize.value,
+      });
+    } else {
+      await PrizeClaim.create({
+        userId: user._id,
+        spinId: spin._id,
+        prizeId: prize._id,
+        clubId: club._id,
+        status: 'completed',
+        confirmedAt: new Date(),
+      });
+    }
   }
 
   if (prize.totalQuantity !== null) {
@@ -328,7 +393,9 @@ async function doSpin(user, club, req, res) {
     await prize.save();
   }
 
-  const prizeInfo = await Prize.findById(prize._id).select('name description type value image backgroundImage dropChance slotIndex');
+  const prizeInfo = await Prize.findById(prize._id).select(
+    'name description type value productEntityId image backgroundImage dropChance slotIndex'
+  );
   const playerName = (user.name && String(user.name).trim()) ? String(user.name).trim() : '';
   const spinPayload = {
     _id: spin._id,
@@ -338,6 +405,7 @@ async function doSpin(user, club, req, res) {
       description: prizeInfo.description,
       type: prizeInfo.type,
       value: prizeInfo.value,
+      productEntityId: prizeInfo.productEntityId != null ? prizeInfo.productEntityId : undefined,
       image: prizeInfo.image,
       backgroundImage: prizeInfo.backgroundImage,
       slotIndex: prizeInfo.slotIndex,
