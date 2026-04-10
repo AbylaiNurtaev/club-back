@@ -17,6 +17,7 @@ const transactionSchema = new mongoose.Schema({
       'prize_club_time',
       'manual_adjustment',
       'referral_bonus',
+      'top_up',
     ],
     required: true,
   },

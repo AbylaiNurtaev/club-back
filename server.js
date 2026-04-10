@@ -126,6 +126,19 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
+
+// Захват сырого тела для HMAC-верификации webhook TipTop Pay
+app.use('/api/payments/tiptop', (req, res, next) => {
+  let data = '';
+  req.setEncoding('utf8');
+  req.on('data', (chunk) => { data += chunk; });
+  req.on('end', () => {
+    req.rawBody = data;
+    try { req.body = JSON.parse(data); } catch (_) { req.body = {}; }
+    next();
+  });
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -135,6 +148,7 @@ app.use('/api/players', require('./routes/playerRoutes'));
 app.use('/api/clubs', require('./routes/clubRoutes'));
 app.use('/api/company', require('./routes/companyRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/payments', require('./routes/paymentRoutes'));
 
 // Тестовый роут
 app.get('/', (req, res) => {
