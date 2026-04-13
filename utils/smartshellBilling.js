@@ -146,6 +146,17 @@ async function fetchClients(fields) {
   return list;
 }
 
+async function searchClientsByPhone(fields, phoneQuery) {
+  const escaped = escapeGraphQLString(phoneQuery);
+  const query = `query { clients(input: { q: "${escaped}" }) { data { ${fields} } } }`;
+  const json = await graphqlAuthorized(query);
+  const list = json?.data?.clients?.data;
+  if (!Array.isArray(list)) {
+    throw new Error(`SmartShell clients(search): неожиданный ответ: ${JSON.stringify(json?.data)}`);
+  }
+  return list;
+}
+
 function findClientByPhone(clients, playerPhone) {
   const target = normalizePhoneDigits(playerPhone);
   if (!target) return null;
@@ -164,8 +175,15 @@ async function resolveClientOrWarn(playerPhone, fields) {
   }
   const normalized = normalizePhoneDigits(playerPhone);
   console.log(`[smartshell] ищем клиента: телефон=${playerPhone}, нормализован=${normalized}`);
-  const clients = await fetchClients(fields);
-  console.log(`[smartshell] получено клиентов из SmartShell: ${clients.length}`);
+  let clients = [];
+  if (normalized) {
+    clients = await searchClientsByPhone(fields, normalized);
+    console.log(`[smartshell] найдено клиентов по q-поиску: ${clients.length}`);
+  }
+  if (!clients.length) {
+    clients = await fetchClients(fields);
+    console.log(`[smartshell] q-поиск пустой, получено клиентов общим запросом: ${clients.length}`);
+  }
   const client = findClientByPhone(clients, playerPhone);
   if (!client || !client.uuid) {
     console.warn(
