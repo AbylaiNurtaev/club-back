@@ -333,8 +333,16 @@ async function createSmartshellProductPayment(playerPhone, entityId, options = {
   };
 }
 
+/** Список товаров в ответе API может быть массивом или обёрткой `{ data: [...] }` (как у clients). */
+function normalizeGoodsList(goodsRaw) {
+  if (Array.isArray(goodsRaw)) return goodsRaw;
+  if (goodsRaw && Array.isArray(goodsRaw.data)) return goodsRaw.data;
+  return null;
+}
+
 /**
  * Складские остатки товаров (для админки и синхронизации с productEntityId).
+ * Список может быть неполным (лимит/фильтр) — для точного остатка по id см. fetchSmartshellGoodById.
  * @returns {Promise<Array<{ id: number, title: string, amount: number, state: object }>>}
  */
 async function fetchSmartshellGoods() {
@@ -343,11 +351,40 @@ async function fetchSmartshellGoods() {
   if (json.errors && json.errors.length) {
     throw new Error(json.errors.map((e) => e.message).join('; '));
   }
-  const goods = json?.data?.goods;
-  if (!Array.isArray(goods)) {
+  const goods = normalizeGoodsList(json?.data?.goods);
+  if (!goods) {
     throw new Error(`SmartShell goods: неожиданный ответ: ${JSON.stringify(json?.data)}`);
   }
   return goods;
+}
+
+/**
+ * Один товар по id (надёжнее списка goods, если товара нет в выдаче списка).
+ * @param {number} entityId — productEntityId / entity_id GOOD
+ * @returns {Promise<object|null>}
+ */
+async function fetchSmartshellGoodById(entityId) {
+  const id = Number(entityId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const run = async (q) => {
+    const json = await graphqlAuthorized(q);
+    return json?.data?.good ?? null;
+  };
+
+  try {
+    return await run(
+      `query { good(id: ${id}) { id title amount state { received income sold disposal } } }`
+    );
+  } catch (e) {
+    console.warn(`[smartshell] good(${id}) со state:`, e?.message || e);
+  }
+  try {
+    return await run(`query { good(id: ${id}) { id title amount } }`);
+  } catch (e2) {
+    console.warn(`[smartshell] good(${id}):`, e2?.message || e2);
+    return null;
+  }
 }
 
 module.exports = {
@@ -357,6 +394,7 @@ module.exports = {
   syncPointsPrizeToSmartshellBalance,
   createSmartshellProductPayment,
   fetchSmartshellGoods,
+  fetchSmartshellGoodById,
   /** @deprecated используйте syncBalancePrizeToSmartshellDeposit */
   syncPrizePointsToSmartshellDeposit: syncBalancePrizeToSmartshellDeposit,
 };

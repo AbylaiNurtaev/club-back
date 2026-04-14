@@ -8,7 +8,7 @@ const CompanySettings = require('../models/CompanySettings');
 const generateToken = require('../utils/generateToken');
 const QRCode = require('qrcode');
 const { deleteFromS3 } = require('../utils/s3Upload');
-const { isSmartShellBillingConfigured, fetchSmartshellGoods } = require('../utils/smartshellBilling');
+const { isSmartShellBillingConfigured, fetchSmartshellGoods, fetchSmartshellGoodById } = require('../utils/smartshellBilling');
 
 // @desc    Регистрация/вход администратора
 // @route   POST /api/admin/login
@@ -603,23 +603,37 @@ const getPrizes = async (req, res) => {
   try {
     const prizes = await Prize.find().sort({ slotIndex: 1 }).lean();
 
-    let goodsById = new Map();
-    let smartshellGoodsLoaded = false;
-    if (isSmartShellBillingConfigured()) {
+    const goodsById = new Map();
+    const smartshellConfigured = isSmartShellBillingConfigured();
+    if (smartshellConfigured) {
       try {
         const goods = await fetchSmartshellGoods();
-        smartshellGoodsLoaded = true;
         for (const g of goods) {
           if (g && g.id != null) goodsById.set(Number(g.id), g);
         }
       } catch (e) {
         console.warn('[admin/prizes] не удалось загрузить goods из SmartShell:', e?.message || e);
       }
+
+      const needIds = [
+        ...new Set(
+          prizes
+            .filter((p) => p.type === 'product' && p.productEntityId != null)
+            .map((p) => Number(p.productEntityId))
+            .filter((id) => Number.isFinite(id) && id > 0 && !goodsById.has(id))
+        ),
+      ];
+      await Promise.all(
+        needIds.map(async (id) => {
+          const g = await fetchSmartshellGoodById(id);
+          if (g && g.id != null) goodsById.set(Number(g.id), g);
+        })
+      );
     }
 
     const enriched = prizes.map((p) => {
       const row = { ...p };
-      if (p.type === 'product' && smartshellGoodsLoaded && p.productEntityId != null) {
+      if (smartshellConfigured && p.type === 'product' && p.productEntityId != null) {
         const id = Number(p.productEntityId);
         const g = goodsById.get(id);
         row.smartshellGood = g
