@@ -8,6 +8,7 @@ const CompanySettings = require('../models/CompanySettings');
 const generateToken = require('../utils/generateToken');
 const QRCode = require('qrcode');
 const { deleteFromS3 } = require('../utils/s3Upload');
+const { isSmartShellBillingConfigured, fetchSmartshellGoods } = require('../utils/smartshellBilling');
 
 // @desc    Регистрация/вход администратора
 // @route   POST /api/admin/login
@@ -600,9 +601,40 @@ const createPrize = async (req, res) => {
 // @access  Private/Admin
 const getPrizes = async (req, res) => {
   try {
-    const prizes = await Prize.find().sort({ slotIndex: 1 });
+    const prizes = await Prize.find().sort({ slotIndex: 1 }).lean();
 
-    res.json(prizes);
+    let goodsById = new Map();
+    let smartshellGoodsLoaded = false;
+    if (isSmartShellBillingConfigured()) {
+      try {
+        const goods = await fetchSmartshellGoods();
+        smartshellGoodsLoaded = true;
+        for (const g of goods) {
+          if (g && g.id != null) goodsById.set(Number(g.id), g);
+        }
+      } catch (e) {
+        console.warn('[admin/prizes] не удалось загрузить goods из SmartShell:', e?.message || e);
+      }
+    }
+
+    const enriched = prizes.map((p) => {
+      const row = { ...p };
+      if (p.type === 'product' && smartshellGoodsLoaded && p.productEntityId != null) {
+        const id = Number(p.productEntityId);
+        const g = goodsById.get(id);
+        row.smartshellGood = g
+          ? {
+            id: g.id,
+            title: g.title,
+            amount: g.amount,
+            state: g.state || null,
+          }
+          : null;
+      }
+      return row;
+    });
+
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -333,12 +333,30 @@ async function createSmartshellProductPayment(playerPhone, entityId, options = {
   };
 }
 
+/**
+ * Складские остатки товаров (для админки и синхронизации с productEntityId).
+ * @returns {Promise<Array<{ id: number, title: string, amount: number, state: object }>>}
+ */
+async function fetchSmartshellGoods() {
+  const query = 'query { goods { id title amount state { received income sold disposal } } }';
+  const json = await graphqlAuthorized(query);
+  if (json.errors && json.errors.length) {
+    throw new Error(json.errors.map((e) => e.message).join('; '));
+  }
+  const goods = json?.data?.goods;
+  if (!Array.isArray(goods)) {
+    throw new Error(`SmartShell goods: неожиданный ответ: ${JSON.stringify(json?.data)}`);
+  }
+  return goods;
+}
+
 module.exports = {
   isSmartShellBillingConfigured,
   normalizePhoneDigits,
   syncBalancePrizeToSmartshellDeposit,
   syncPointsPrizeToSmartshellBalance,
   createSmartshellProductPayment,
+  fetchSmartshellGoods,
   /** @deprecated используйте syncBalancePrizeToSmartshellDeposit */
   syncPrizePointsToSmartshellDeposit: syncBalancePrizeToSmartshellDeposit,
 };
