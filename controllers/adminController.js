@@ -623,6 +623,7 @@ const getPrizes = async (req, res) => {
             .filter((id) => Number.isFinite(id) && id > 0 && !goodsById.has(id))
         ),
       ];
+      // productEntityId в призе = полю id товара в SmartShell (goods[].id / good(id)).
       await Promise.all(
         needIds.map(async (id) => {
           const g = await fetchSmartshellGoodById(id);
