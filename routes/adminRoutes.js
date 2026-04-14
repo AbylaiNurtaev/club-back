@@ -24,6 +24,7 @@ const {
   getCompanyLogo,
   upsertCompanyLogo,
   deleteCompanyLogo,
+  getSmartshellGood,
 } = require('../controllers/adminController');
 const { protect, authorize } = require('../middleware/auth');
 const { upload, uploadToS3, uploadPrizeFilesToS3 } = require('../utils/s3Upload');
@@ -71,5 +72,8 @@ router.get('/logs', getLogs);
 router.get('/company/logo', getCompanyLogo);
 router.post('/company/logo', upload.single('image'), uploadToS3, upsertCompanyLogo);
 router.delete('/company/logo', deleteCompanyLogo);
+
+// SmartShell: товар по id (остаток на складе)
+router.get('/smartshell/goods/:id', getSmartshellGood);
 
 module.exports = router;

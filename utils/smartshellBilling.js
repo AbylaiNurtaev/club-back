@@ -133,6 +133,23 @@ async function graphqlAuthorized(query) {
   }
 }
 
+/** Как graphqlAuthorized, но возвращает тело ответа целиком (включая errors и extensions). */
+async function graphqlAuthorizedRaw(query) {
+  const tryOnce = async () => {
+    const token = await getValidAccessToken();
+    return postGraphql(query, token);
+  };
+  try {
+    return await tryOnce();
+  } catch (e) {
+    if (e.status === 401) {
+      tokenCache = { accessToken: null, expiresAt: 0 };
+      return tryOnce();
+    }
+    throw e;
+  }
+}
+
 /**
  * @param {string} fields — подмножество полей User в GraphQL (без лишних полей, чтобы не падать на неизвестных в схеме).
  */
@@ -387,6 +404,23 @@ async function fetchSmartshellGoodById(entityId) {
   }
 }
 
+/**
+ * Полный ответ GraphQL по товару (для прокси-эндпоинта админки): data + errors + extensions.
+ * При ошибке схемы на поле state повторяет запрос без state.
+ */
+async function fetchSmartshellGoodGraphqlResponse(entityId) {
+  const id = Number(entityId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const qFull = `query { good(id: ${id}) { id title amount state { received income sold disposal } } }`;
+  let json = await graphqlAuthorizedRaw(qFull);
+  if (json.errors?.length && json.data?.good == null) {
+    const qSimple = `query { good(id: ${id}) { id title amount } }`;
+    json = await graphqlAuthorizedRaw(qSimple);
+  }
+  return json;
+}
+
 module.exports = {
   isSmartShellBillingConfigured,
   normalizePhoneDigits,
@@ -395,6 +429,7 @@ module.exports = {
   createSmartshellProductPayment,
   fetchSmartshellGoods,
   fetchSmartshellGoodById,
+  fetchSmartshellGoodGraphqlResponse,
   /** @deprecated используйте syncBalancePrizeToSmartshellDeposit */
   syncPrizePointsToSmartshellDeposit: syncBalancePrizeToSmartshellDeposit,
 };

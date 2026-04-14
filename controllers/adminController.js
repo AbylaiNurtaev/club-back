@@ -8,7 +8,12 @@ const CompanySettings = require('../models/CompanySettings');
 const generateToken = require('../utils/generateToken');
 const QRCode = require('qrcode');
 const { deleteFromS3 } = require('../utils/s3Upload');
-const { isSmartShellBillingConfigured, fetchSmartshellGoods, fetchSmartshellGoodById } = require('../utils/smartshellBilling');
+const {
+  isSmartShellBillingConfigured,
+  fetchSmartshellGoods,
+  fetchSmartshellGoodById,
+  fetchSmartshellGoodGraphqlResponse,
+} = require('../utils/smartshellBilling');
 
 // @desc    Регистрация/вход администратора
 // @route   POST /api/admin/login
@@ -655,6 +660,44 @@ const getPrizes = async (req, res) => {
   }
 };
 
+// @desc    Товар SmartShell по id (остаток, название, state) — прокси GraphQL good(id)
+// @route   GET /api/admin/smartshell/goods/:id
+// @access  Private/Admin
+const getSmartshellGood = async (req, res) => {
+  try {
+    if (!isSmartShellBillingConfigured()) {
+      return res.status(503).json({
+        message: 'SmartShell не настроен: задайте SMARTSHELL_LOGIN, SMARTSHELL_PASSWORD и SMARTSHELL_COMPANY_ID',
+      });
+    }
+
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Некорректный id товара' });
+    }
+
+    const payload = await fetchSmartshellGoodGraphqlResponse(id);
+    if (!payload) {
+      return res.status(400).json({ message: 'Некорректный id товара' });
+    }
+
+    if (payload.errors && payload.errors.length) {
+      return res.status(502).json({
+        message: 'Ошибка SmartShell GraphQL',
+        errors: payload.errors,
+        data: payload.data ?? null,
+      });
+    }
+
+    const body = { data: payload.data };
+    if (payload.extensions) body.extensions = payload.extensions;
+    return res.json(body);
+  } catch (error) {
+    console.error('[admin] GET /smartshell/goods/:id', error?.message || error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Обновить приз
 // @route   PUT /api/admin/prizes/:id
 // @access  Private/Admin
@@ -1210,4 +1253,5 @@ module.exports = {
   getCompanyLogo,
   upsertCompanyLogo,
   deleteCompanyLogo,
+  getSmartshellGood,
 };
